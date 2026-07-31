@@ -160,6 +160,13 @@ func removeRuns(notes []store.Note, runs []run) []store.Note {
 // ascending (project, section, position) order. Must be called with
 // s.mu held.
 func (s *fileStore) removeNoteLocsLocked(locs []noteLoc) []store.Event {
+	// Evict before any mutation below, while loc.noteIdx still points at
+	// the note it named.
+	for _, loc := range locs {
+		id := s.projects[s.order[loc.projIdx]].proj.Sections[loc.secIdx].Notes[loc.noteIdx].ID
+		s.evictSearchCacheLocked(id)
+	}
+
 	type key struct{ projIdx, secIdx int }
 	groups := map[key][]int{}
 	for _, loc := range locs {
