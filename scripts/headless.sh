@@ -47,15 +47,21 @@ status_file="$work_dir/status"
 run_script="$work_dir/run.sh"
 sway_config="$work_dir/sway.conf"
 sway_log="$work_dir/sway.log"
+cmd_log="$work_dir/command.log"
 
 # sway's `exec` runs once the compositor is up, so the command under test
 # only ever runs against a live session — no manual "wait for sway ready"
 # polling needed. Quote every argument through %q so paths and flags with
 # spaces survive the round trip through the generated script.
+#
+# The command's own output goes to $cmd_log rather than to the inherited
+# descriptors, which point at $sway_log. Without this its output is mixed
+# into sway's log and thrown away on the ordinary failure path, so a red
+# `go test` reports nothing at all.
 {
 	printf '#!/usr/bin/env bash\n'
 	printf '%q ' "$@"
-	printf '\n'
+	printf '>%q 2>&1\n' "$cmd_log"
 	printf 'echo $? > %q\n' "$status_file"
 	printf 'swaymsg exit >/dev/null 2>&1 || true\n'
 } >"$run_script"
@@ -74,11 +80,19 @@ export WLR_LIBINPUT_NO_DEVICES=1
 export WLR_RENDERER=pixman
 export GSK_RENDERER=cairo
 
-if ! sway -c "$sway_config" >"$sway_log" 2>&1; then
-	status=$?
-	echo "headless.sh: sway exited with status $status" >&2
+sway_status=0
+sway -c "$sway_config" >"$sway_log" 2>&1 || sway_status=$?
+
+# Always replay the command's output, pass or fail. This is the only place
+# a caller can see it, and a failing command is exactly when it matters.
+if [ -f "$cmd_log" ]; then
+	cat "$cmd_log"
+fi
+
+if [ "$sway_status" -ne 0 ]; then
+	echo "headless.sh: sway exited with status $sway_status" >&2
 	cat "$sway_log" >&2
-	exit "$status"
+	exit "$sway_status"
 fi
 
 if [ ! -f "$status_file" ]; then

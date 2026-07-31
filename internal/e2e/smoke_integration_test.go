@@ -203,7 +203,7 @@ func TestRun_StartsMapsCapturesAndSingleInstances(t *testing.T) {
 		t.Fatalf("wtype: %v: %s", err, out)
 	}
 	if out, err := exec.Command("wtype", "-k", "Return").CombinedOutput(); err != nil {
-		t.Fatalf("wtype -k Return: %v: %s", out, err)
+		t.Fatalf("wtype -k Return: %v: %s", err, out)
 	}
 
 	projectsDir := filepath.Join(dataHome, "ingot", "projects")
