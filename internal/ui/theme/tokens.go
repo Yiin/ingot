@@ -144,6 +144,28 @@ const (
 	ScrollbarInk      = "rgba(0,0,0,.28)"
 )
 
+// Unfocused panel state (internal/ui/panel): never shown in the demo, so
+// this is Ingot's own contract, not a measurement. Only the focus-ring
+// family (*:focus-visible, .note-card.selected/.selection-anchor,
+// .composer.focused) dims to 45% opacity, and the panel shadow halves —
+// every other colour (fills, text, done state) stays exactly as-is.
+const (
+	FocusRingDim         = "rgba(10,108,255,.45)"
+	PanelShadowUnfocused = "0 4px 14px rgba(0,0,0,.10), 0 1px 4px rgba(0,0,0,.04)"
+)
+
+// Duplicate-capture flash (internal/ui/panel + internal/ui/notelist):
+// the existing row's ring pulses twice over 300ms when a capture
+// duplicates the newest note. Not shown in the original — Ingot's own
+// contract, like .dragging.
+const DuplicateFlashDuration = 300 // ms, kept in sync with style.css by notelist's own golden test
+
+// Empty-state hint block (internal/ui/panel): the first-run "press
+// Shift twice" hint and the search-no-matches block share this padding —
+// measured as "40dp of breathing room" in the child spec, not from the
+// demo video (neither state is shown in it).
+const PanelHintPad = 40
+
 // Font stack, closest metric match to SF Pro Text for cap height, x-height
 // and leading. Inline bold is weight 600 (SF's bold-in-text), not 700.
 const (

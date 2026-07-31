@@ -7,6 +7,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
+	"github.com/Yiin/ingot/internal/ui/theme"
 	"github.com/Yiin/ingot/internal/ui/widget"
 )
 
@@ -21,12 +22,20 @@ type rowBinding struct {
 	item     *Item
 	suppress bool // true while Bind is driving Row's setters programmatically
 	strip    glib.SourceHandle
+	flash    glib.SourceHandle
 }
 
 func (b *rowBinding) cancelStrip() {
 	if b.strip != 0 {
 		glib.SourceRemove(b.strip)
 		b.strip = 0
+	}
+}
+
+func (b *rowBinding) cancelFlash() {
+	if b.flash != 0 {
+		glib.SourceRemove(b.flash)
+		b.flash = 0
 	}
 }
 
@@ -298,9 +307,11 @@ func (l *List) bindRow(obj *coreglib.Object) {
 	it := itemModel.ObjectValue(li.Item())
 	b.item = it
 	b.cancelStrip()
+	b.cancelFlash()
 
 	b.suppress = true
-	b.row.RemoveCSSClass("just-inserted") // first, unconditionally
+	b.row.RemoveCSSClass("just-inserted")   // first, unconditionally
+	b.row.RemoveCSSClass("duplicate-flash") // same: never replay on recycle
 
 	placeholder := it.IsPlaceholder()
 	b.row.SetVisible(!placeholder)
@@ -340,6 +351,7 @@ func (l *List) unbindRow(obj *coreglib.Object) {
 	li := obj.Cast().(*gtk.ListItem)
 	if b, ok := l.rows[li.Native()]; ok {
 		b.cancelStrip()
+		b.cancelFlash()
 		b.item = nil
 	}
 }
@@ -348,8 +360,40 @@ func (l *List) teardownRow(obj *coreglib.Object) {
 	li := obj.Cast().(*gtk.ListItem)
 	if b, ok := l.rows[li.Native()]; ok {
 		b.cancelStrip()
+		b.cancelFlash()
 	}
 	delete(l.rows, li.Native())
+}
+
+// FlashDuplicate briefly pulses it's row ring twice over
+// theme.DuplicateFlashDuration — the panel's response (copper-l2z.26) to
+// a capture that duplicates the newest note. A no-op if it is not
+// currently bound to a live (on-screen) row: an off-screen item has
+// nothing to flash, and there is no persistent "pending flash" state to
+// replay once it scrolls into view. A repeat call within the same
+// window (it flashing again before the first flash finishes) restarts
+// the timer but does not restart the CSS animation itself — the class
+// is already present, so GTK never replays ingot-duplicate-flash — a
+// rare-enough edge case (back-to-back duplicate captures of the exact
+// same note) that it is left as a known limitation rather than adding a
+// forced-reflow workaround.
+func (l *List) FlashDuplicate(it *Item) {
+	if it == nil {
+		return
+	}
+	for _, b := range l.rows {
+		if b.item != it {
+			continue
+		}
+		b.cancelFlash()
+		b.row.AddCSSClass("duplicate-flash")
+		b.flash = glib.TimeoutAdd(theme.DuplicateFlashDuration, func() bool {
+			b.row.RemoveCSSClass("duplicate-flash")
+			b.flash = 0
+			return false
+		})
+		return
+	}
 }
 
 func (l *List) setupHeader(obj *coreglib.Object) {

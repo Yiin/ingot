@@ -84,6 +84,10 @@
   --scrollbar-w: 5;
   --scrollbar-inset: 3;
   --scrollbar-ink: rgba(0,0,0,.28);
+
+  --focus-ring-color: var(--accent);
+  --panel-shadow-unfocused: 0 4px 14px rgba(0,0,0,.10), 0 1px 4px rgba(0,0,0,.04);
+  --panel-hint-pad: 40;
 }
 
 /* The panel: opaque, no backdrop-filter — see the header comment above. */
@@ -96,6 +100,15 @@
   font-size: calc(var(--font-body) * 1px);
   line-height: calc(var(--line-body) / var(--font-body));
   color: var(--ink);
+}
+
+/* Unfocused (another app has focus): only the focus-ring family dims to
+ * 45% and the panel shadow halves, via --focus-ring-color cascading into
+ * every ring below — never dim card fills, text or done state. Not shown
+ * in the demo; internal/ui/panel's own contract. */
+.ingot-panel.unfocused {
+  --focus-ring-color: rgba(10,108,255,.45);
+  box-shadow: var(--panel-shadow-unfocused), inset 0 1px 0 var(--panel-rim);
 }
 
 /* Note card: warm surface, no drop shadow (measured fact — see header).
@@ -147,7 +160,7 @@
   background-color: var(--card-bg-selected);
   outline-style: solid;
   outline-width: calc(var(--focus-ring) * 1px);
-  outline-color: var(--accent);
+  outline-color: var(--focus-ring-color);
   outline-offset: 2px;
   transition: background-color 120ms ease, outline-color 120ms ease;
 }
@@ -156,7 +169,29 @@
  * separate affordance for this, so Ingot adds a 1dp inner ring — see
  * copper-l2z.20. */
 .note-card.selection-anchor {
-  box-shadow: inset 0 0 0 1px var(--accent);
+  box-shadow: inset 0 0 0 1px var(--focus-ring-color);
+}
+
+/* Duplicate-capture flash: the existing row's ring pulses twice over
+ * 300ms — internal/ui/panel calls internal/ui/notelist's FlashDuplicate
+ * in response to "capture duplicates the newest note." Not shown in the
+ * original; Ingot's own contract, like .dragging. Kept in sync with
+ * DuplicateFlashDuration by TestDuplicateFlashDurationMatchesCSS. */
+@keyframes ingot-duplicate-flash {
+  0%, 40%, 100% { outline-color: rgba(10,108,255,0); }
+  20%, 60% { outline-color: rgba(10,108,255,1); }
+}
+
+.note-card.duplicate-flash {
+  outline-style: solid;
+  outline-width: calc(var(--focus-ring) * 1px);
+  /* The resting (pre-/post-animation) colour: without this, the outline
+   * falls back to the inherited text colour for the frame(s) between the
+   * 300ms CSS animation ending and FlashDuplicate's own 300ms Go timer
+   * actually stripping the class — a stray dark ring flash. */
+  outline-color: rgba(10,108,255,0);
+  outline-offset: 2px;
+  animation: ingot-duplicate-flash 300ms ease-in-out 1;
 }
 
 .note-card.done {
@@ -254,8 +289,24 @@
   background-color: var(--field-bg);
   border-radius: calc(var(--search-radius) * 1px);
   min-height: calc(var(--search-h) * 1px);
-  padding-left: calc(var(--card-pad-l) * 1px);
-  padding-right: calc(var(--search-gap) * 1px);
+}
+
+.search-icon {
+  color: var(--ink-muted);
+}
+
+.search-match-count {
+  color: var(--ink-muted);
+}
+
+/* The overflow MenuButton: same fill as the search field, circular, glyph
+ * in --ink-muted via GTK's symbolic-icon recoloring. */
+.overflow-btn {
+  background-color: var(--field-bg);
+  min-width: calc(var(--overflow-btn) * 1px);
+  min-height: calc(var(--overflow-btn) * 1px);
+  border-radius: calc(var(--overflow-btn) * 1px);
+  color: var(--ink-muted);
 }
 
 .composer {
@@ -263,6 +314,22 @@
   border-radius: calc(var(--card-radius) * 1px);
   min-height: calc(var(--composer-min-h) * 1px);
   padding: calc(var(--card-pad-y) * 1px) calc(var(--card-pad-r) * 1px);
+  transition: box-shadow 150ms ease, background-color 150ms ease;
+}
+
+/* Focused: 2dp accent ring and the same fill as a selected note card. */
+.composer.focused {
+  background-color: var(--card-bg-selected);
+  box-shadow: 0 0 0 calc(var(--focus-ring) * 1px) var(--focus-ring-color);
+}
+
+/* A whitespace-only commit attempt: 200ms reddish ring flash. */
+.composer.reject {
+  box-shadow: 0 0 0 calc(var(--focus-ring) * 1px) #E5484D;
+}
+
+.composer-placeholder {
+  color: var(--ink-muted);
 }
 
 .toast-dark,
@@ -357,7 +424,29 @@ checkbutton check:checked {
 *:focus-visible {
   outline-style: solid;
   outline-width: calc(var(--focus-ring) * 1px);
-  outline-color: var(--accent);
+  outline-color: var(--focus-ring-color);
   outline-offset: 2px;
   transition: outline-color 150ms ease;
+}
+
+/* First-run hint and search-no-matches blocks (internal/ui/panel):
+ * centred over the list area, generous breathing room. Both blocks'
+ * child labels inherit their colour from here rather than carrying their
+ * own class. Not shown in the demo; Ingot's own contract. */
+.panel-hint {
+  margin: calc(var(--panel-hint-pad) * 1px);
+  color: var(--ink-muted);
+}
+
+.search-empty {
+  margin: calc(var(--panel-hint-pad) * 1px);
+  color: var(--ink);
+}
+
+.search-empty-clear {
+  color: var(--accent);
+  background: none;
+  box-shadow: none;
+  border: none;
+  padding: 0;
 }

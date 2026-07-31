@@ -66,7 +66,19 @@ func newSectionHeader() *sectionHeader {
 
 // SetTitle uppercases and sets the header's title text — uppercase is
 // done here in Go, deliberately not via font-feature-settings.
+//
+// An empty title (a project with no declared sections gets one implicit
+// unnamed section, per internal/ui/panel's contract) hides the whole
+// header: GtkListView's SetSectionSorter still fires exactly one header
+// bind for that lone section, but the spec wants "no header and no rule,
+// flush under the search field" — a visible-false widget takes no
+// layout space at all, margins included.
 func (h *sectionHeader) SetTitle(title string) {
+	if title == "" {
+		h.SetVisible(false)
+		return
+	}
+	h.SetVisible(true)
 	h.label.SetText(displayTitle(title))
 	h.rule.QueueDraw()
 }
