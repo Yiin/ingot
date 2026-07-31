@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os/exec"
 	"time"
+
+	"github.com/Yiin/ingot/internal/execpipe"
 )
 
 // ErrEmpty means wl-paste reported that nothing is currently
@@ -28,6 +30,13 @@ const maxReadBytes = 1 << 20 // 1 MiB
 // returns in single-digit milliseconds; anything longer means the
 // compositor or the selection owner is stuck.
 const defaultTimeout = 2 * time.Second
+
+// pipeGrace bounds how long runWlPaste keeps reading wl-paste's output
+// after wl-paste itself exits. The selection owner can be wl-copy's
+// forked daemon, which inherits pipe write ends and never closes them, so
+// without this bound a read would block forever waiting for a close that
+// never comes.
+const pipeGrace = 200 * time.Millisecond
 
 // Reader reads the Wayland PRIMARY selection and CLIPBOARD.
 type Reader interface {
@@ -78,39 +87,17 @@ func (r *WlPasteReader) read(ctx context.Context, args ...string) (string, error
 	return string(out), nil
 }
 
-// limitWriter caps the bytes it keeps at limit, silently discarding
-// anything past it, while still reporting every byte as written so the
-// wl-paste process is never blocked or failed by the cap.
-type limitWriter struct {
-	buf   bytes.Buffer
-	limit int
-}
-
-func (w *limitWriter) Write(p []byte) (int, error) {
-	if room := w.limit - w.buf.Len(); room > 0 {
-		if room > len(p) {
-			room = len(p)
-		}
-		w.buf.Write(p[:room])
-	}
-	return len(p), nil
-}
-
 func runWlPaste(ctx context.Context, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "wl-paste", args...)
-	stdout := &limitWriter{limit: maxReadBytes}
-	var stderr bytes.Buffer
-	cmd.Stdout = stdout
-	cmd.Stderr = &stderr
 
-	err := cmd.Run()
+	stdout, stderr, err := execpipe.Run(cmd, pipeGrace, maxReadBytes)
 	if err == nil {
-		return stdout.buf.Bytes(), nil
+		return stdout, nil
 	}
 
 	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && bytes.Contains(stderr.Bytes(), []byte("Nothing is copied")) {
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 && bytes.Contains(stderr, []byte("Nothing is copied")) {
 		return nil, errEmptySelection
 	}
-	return stdout.buf.Bytes(), err
+	return stdout, err
 }

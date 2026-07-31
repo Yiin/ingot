@@ -1,18 +1,25 @@
 package clipboard
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/Yiin/ingot/internal/execpipe"
 )
 
 // defaultTimeout bounds how long SetText may block on wl-copy starting and
 // handing its payload to the forked background server.
 const defaultTimeout = 2 * time.Second
+
+// pipeGrace bounds how long runWlCopy keeps reading wl-copy's stderr after
+// wl-copy itself exits. wl-copy forks a daemon that holds the clipboard
+// selection and inherits the pipe's write end, so without this bound a
+// read would block forever waiting for a close that never comes.
+const pipeGrace = 200 * time.Millisecond
 
 // Writer sets the Wayland CLIPBOARD selection.
 type Writer interface {
@@ -72,11 +79,10 @@ func (w *WlCopyWriter) SetText(ctx context.Context, text string) error {
 func runWlCopy(ctx context.Context, text string) error {
 	cmd := exec.CommandContext(ctx, "wl-copy")
 	cmd.Stdin = strings.NewReader(text)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
 
-	if err := cmd.Run(); err != nil {
-		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+	_, stderr, err := execpipe.Run(cmd, pipeGrace, 0)
+	if err != nil {
+		if msg := strings.TrimSpace(string(stderr)); msg != "" {
 			return errors.New(msg)
 		}
 		return err
