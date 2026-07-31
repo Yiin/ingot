@@ -151,27 +151,18 @@
   transition: background-color 140ms ease-out;
 }
 
-/* Newly inserted row: opacity, height and padding grow in from nothing so
- * the card visibly pushes its neighbours down. Gated by the class, not
- * applied to .note-card unconditionally — the row widget recycles, and an
- * unconditional animation would replay on every scroll-driven rebind. The
- * "to" keyframe ends exactly on the card's resting geometry so the
- * animation is invisible at completion. */
+/* Newly inserted row: opacity grows in from nothing so the card visibly
+ * fades up as it appears. Gated by the class, not applied to .note-card
+ * unconditionally — the row widget recycles, and an unconditional
+ * animation would replay on every scroll-driven rebind. GTK's CSS engine
+ * does not interpolate min-height/padding/margin the way it does opacity
+ * (measured live, copper-5g4), so the matching height grow-in is driven
+ * by hand instead — internal/ui/notelist's growRowIn, via a GtkRevealer
+ * wrapped around the row (b.clip) and its own native slide transition, on
+ * the same InsertAnimDuration curve as this keyframe. */
 @keyframes ingot-row-in {
-  from {
-    opacity: 0;
-    min-height: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    margin-top: 0;
-  }
-  to {
-    opacity: 1;
-    min-height: calc(var(--card-min-h) * 1px);
-    padding-top: calc(var(--card-pad-y) * 1px);
-    padding-bottom: calc(var(--card-pad-y) * 1px);
-    margin-top: calc(var(--card-gap) * 1px);
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .note-card.just-inserted {

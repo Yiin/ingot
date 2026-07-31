@@ -16,14 +16,16 @@ import (
 // widget.Row for as long as the factory keeps that ListItem alive —
 // built once in Setup, refreshed on every Bind.
 type rowBinding struct {
-	li  *gtk.ListItem
-	row *widget.Row
-	ph  *gtk.Label // "No notes yet" placeholder card; exactly one of row/ph is visible
+	li   *gtk.ListItem
+	row  *widget.Row
+	clip *gtk.Revealer // wraps row; lets growRowIn animate row's own AllocatedHeight in from 0 (see growRowIn)
+	ph   *gtk.Label    // "No notes yet" placeholder card; exactly one of row/ph is visible
 
 	item     *Item
 	suppress bool // true while Bind is driving Row's setters programmatically
 	strip    glib.SourceHandle
 	flash    glib.SourceHandle
+	growIdle glib.SourceHandle // pending growRowIn deferral; see growRowIn's own doc comment
 }
 
 func (b *rowBinding) cancelStrip() {
@@ -38,6 +40,26 @@ func (b *rowBinding) cancelFlash() {
 		glib.SourceRemove(b.flash)
 		b.flash = 0
 	}
+}
+
+func (b *rowBinding) cancelGrowIdle() {
+	if b.growIdle != 0 {
+		glib.SourceRemove(b.growIdle)
+		b.growIdle = 0
+	}
+}
+
+// resetGrow collapses clip instantly (no transition) — the baseline every
+// bind starts from before growRowIn (or an instant re-reveal, for an
+// already-settled item) decides the real state. GtkRevealer has no
+// "cancel an in-flight transition" call of its own; retargeting
+// SetRevealChild mid-transition is enough (it does not need an explicit
+// stop first). It does cancel a still-pending growRowIn deferral, the one
+// piece of grow-related state that does need explicit teardown.
+func (b *rowBinding) resetGrow() {
+	b.cancelGrowIdle()
+	b.clip.SetTransitionDuration(0)
+	b.clip.SetRevealChild(false)
 }
 
 // headerBinding is the state kept alongside one recycled ListHeader's
@@ -498,17 +520,34 @@ func (l *List) setupRow(obj *coreglib.Object) {
 
 	row := widget.NewRow()
 
+	// clip wraps row unconditionally, not just while animating, so
+	// growRowIn never has to reparent anything mid-bind. GtkRevealer, not
+	// a GtkScrolledWindow: GTK's CSS engine does not interpolate
+	// min-height/padding/margin (measured live, copper-5g4), and a
+	// ScrolledWindow's own MinContentHeight/MaxContentHeight turned out
+	// not to support a smooth intermediate clip either (also measured
+	// live: forcing both to the same ticking value snapped straight from
+	// 0 to the child's full natural size on the first nonzero tick,
+	// instead of growing through it). GtkRevealer's slide transition is a
+	// real GTK-native animation built for exactly this "allocate less
+	// than natural, growing over time" case, and GtkListView's row
+	// measurement respects it correctly.
+	clip := gtk.NewRevealer()
+	clip.SetChild(row)
+	clip.SetTransitionType(gtk.RevealerTransitionTypeSlideDown)
+	clip.SetRevealChild(true)
+
 	ph := gtk.NewLabel("No notes yet")
 	ph.AddCSSClass("note-placeholder")
 	ph.SetHAlign(gtk.AlignFill)
 	ph.SetVAlign(gtk.AlignCenter)
 
 	wrap := gtk.NewBox(gtk.OrientationVertical, 0)
-	wrap.Append(row)
+	wrap.Append(clip)
 	wrap.Append(ph)
 	li.SetChild(wrap)
 
-	b := &rowBinding{li: li, row: row, ph: ph}
+	b := &rowBinding{li: li, row: row, clip: clip, ph: ph}
 	// Connected once here, in Setup: connecting in Bind would stack one
 	// handler per recycle.
 	row.Checkbox.ConnectToggled(func(checked bool) {
@@ -539,6 +578,7 @@ func (l *List) bindRow(obj *coreglib.Object) {
 	b.item = it
 	b.cancelStrip()
 	b.cancelFlash()
+	b.resetGrow() // first, unconditionally — see resetGrow's own doc comment
 
 	b.suppress = true
 	b.row.RemoveCSSClass("just-inserted")   // first, unconditionally
@@ -546,6 +586,7 @@ func (l *List) bindRow(obj *coreglib.Object) {
 
 	placeholder := it.IsPlaceholder()
 	b.row.SetVisible(!placeholder)
+	b.clip.SetVisible(!placeholder)
 	b.ph.SetVisible(placeholder)
 	// A placeholder is not a note: keep it out of GtkSelectionModel's
 	// selection and activation entirely, not just filtered out of this
@@ -571,20 +612,74 @@ func (l *List) bindRow(obj *coreglib.Object) {
 		// with animations off, the row must never even carry the class,
 		// so its very first bound frame already shows the resting
 		// layout — see internal/ui/motion's own package doc for why CSS
-		// vs. hand-rolled animations are gated differently.
-		if playing, left := justInserted(it.Born, time.Now()); playing && motion.EnableAnimations() {
-			b.row.AddCSSClass("just-inserted")
-			// GTK CSS has no animation-end signal, so without this timer
-			// the class would replay on the row's next recycle.
-			ms := uint(left/time.Millisecond) + 16
-			b.strip = glib.TimeoutAdd(ms, func() bool {
-				b.row.RemoveCSSClass("just-inserted")
-				b.strip = 0
-				return false
-			})
+		// vs. hand-rolled animations are gated differently. growRowIn is
+		// called unconditionally either way — motion.Reveal, underneath
+		// it, already honours EnableAnimations() for free (GtkRevealer's
+		// transition is a built-in GTK animation, not a hand-rolled one).
+		if playing, left := justInserted(it.Born, time.Now()); playing {
+			if motion.EnableAnimations() {
+				b.row.AddCSSClass("just-inserted")
+				// GTK CSS has no animation-end signal, so without this
+				// timer the class would replay on the row's next recycle.
+				ms := uint(left/time.Millisecond) + 16
+				b.strip = glib.TimeoutAdd(ms, func() bool {
+					b.row.RemoveCSSClass("just-inserted")
+					b.strip = 0
+					return false
+				})
+			}
+			growRowIn(b, left)
+		} else {
+			// Not a fresh insert: reveal instantly, no transition —
+			// resetGrow above only ever collapses; every real item must
+			// end this function actually visible.
+			b.clip.SetTransitionDuration(0)
+			b.clip.SetRevealChild(true)
 		}
 	}
 	b.suppress = false
+}
+
+// growRowIn animates b.row's own AllocatedHeight from 0 up to its natural
+// size over left (the remaining slice of InsertAnimDuration — the same
+// value the opacity fade's own timer above uses, so a row rebound
+// mid-flight onto a still-fresh item resumes rather than replays).
+//
+// style.css's ingot-row-in @keyframes handles opacity for free — GTK's
+// CSS engine interpolates that fine — but it cannot animate min-height/
+// padding/margin-top the same way (measured live, copper-5g4: sampled for
+// 300ms, no growth at all). A GtkScrolledWindow's own MinContentHeight/
+// MaxContentHeight, hand-ticked, was the first thing tried instead and
+// also measured live to not work: GtkListView never allocates a plain
+// widget smaller than its natural minimum regardless of SetSizeRequest,
+// and forcing a ScrolledWindow's own min/max content height to the same
+// ticking value did shrink it correctly at 0, but on any nonzero tick
+// snapped straight to the child's full natural size instead of growing
+// through the intermediate values. b.clip is a GtkRevealer instead: its
+// slide transition is a real GTK-native animation built for exactly this
+// "allocate less than natural, growing over time" case, and needs no
+// measured target at all — GTK drives it against the child's own natural
+// size directly.
+//
+// The SetRevealChild(true) call is deferred one main-loop turn via
+// IdleAdd — measured live, calling it in the same call stack that just
+// collapsed the row (resetGrow, called earlier in this same bindRow) and
+// created/bound the row's own widgets never actually animates: GTK
+// treats a reveal-child flip with no intervening frame as the widget's
+// initial state, not a transition, and jumps straight to fully revealed.
+// Giving resetGrow's collapsed state one real frame first is what makes
+// the following reveal a genuine, observable state change. growIdle
+// tracks the pending callback so a row recycled before it fires (a new
+// bind, or teardown) can cancel it — see resetGrow and cancelGrowIdle.
+func growRowIn(b *rowBinding, left time.Duration) {
+	it := b.item
+	b.growIdle = glib.IdleAdd(func() bool {
+		b.growIdle = 0
+		if b.item == it { // not rebound to something else while this was pending
+			motion.Reveal(b.clip, true, left, left)
+		}
+		return false
+	})
 }
 
 func (l *List) unbindRow(obj *coreglib.Object) {
@@ -592,6 +687,7 @@ func (l *List) unbindRow(obj *coreglib.Object) {
 	if b, ok := l.rows[li.Native()]; ok {
 		b.cancelStrip()
 		b.cancelFlash()
+		b.cancelGrowIdle()
 		b.row.CancelEdit() // don't let a pooled row hold a live composer until its next bind
 		b.item = nil
 	}

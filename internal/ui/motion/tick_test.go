@@ -4,7 +4,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
@@ -16,7 +15,7 @@ type fakeTickable struct {
 	removed int
 }
 
-func (f *fakeTickable) AddTickCallback(func(gtk.Widgetter, gdk.FrameClocker) bool) uint {
+func (f *fakeTickable) AddTickCallback(gtk.TickCallback) uint {
 	f.added++
 	return uint(f.added)
 }

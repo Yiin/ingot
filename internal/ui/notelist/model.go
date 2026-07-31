@@ -1,6 +1,10 @@
 package notelist
 
-import "github.com/diamondburned/gotk4/pkg/core/gioutil"
+import (
+	"time"
+
+	"github.com/diamondburned/gotk4/pkg/core/gioutil"
+)
 
 // Model owns the notelist's data: the declared sections, every item in
 // base (insertion) order, and the gioutil-boxed GListModel that mirrors
@@ -148,30 +152,71 @@ func (m *Model) Items() []*Item {
 // Append adds it to the end of the base order.
 func (m *Model) Append(it *Item) {
 	m.assignSeq(it)
+	if m.claimPlaceholder(it) {
+		return
+	}
 	m.list = append(m.list, it)
 	m.gl.Append(it)
-	m.bumpCount(it, 1)
+	m.counts[it.SectionID]++
 	// A fresh, always-larger seq needs no resort notification: it can
 	// only ever sort after every existing item in its section.
 }
 
-// AppendAll adds items to the end of the base order in one Splice — the
-// 5000-items-in-5.3ms path.
+// AppendAll adds items to the end of the base order — the
+// 5000-items-in-5.3ms path. Any item that is the first real note in its
+// (currently placeholder-only) section claims that placeholder's slot
+// individually (see claimPlaceholder); every other item is batched into
+// one trailing Splice.
+//
+// Every item's Born is cleared first: NewItem always stamps it "now",
+// which is right for a live single-note Append/InsertAt (a real capture
+// or composer commit) but wrong for a bulk load — AppendAll's whole
+// reason to exist is loading a large batch at once (a project switch, a
+// search result set), and every one of those items would otherwise
+// satisfy justInserted() and replay the insert-grow animation together,
+// which is not what "just inserted" is supposed to mean for a note that's
+// actually been sitting on disk.
 func (m *Model) AppendAll(items []*Item) {
 	if len(items) == 0 {
 		return
 	}
+	rest := make([]*Item, 0, len(items))
 	for _, it := range items {
+		it.Born = time.Time{}
 		m.assignSeq(it)
-		if !it.IsPlaceholder() {
-			m.counts[it.SectionID]++
+		if m.claimPlaceholder(it) {
+			continue
 		}
+		rest = append(rest, it)
+		m.counts[it.SectionID]++
 	}
-	// list/gl are fully updated before sync() runs, so it never observes
-	// an item that is counted but not yet present in either.
-	m.list = append(m.list, items...)
-	m.gl.Splice(m.gl.Len(), 0, items...)
-	m.sync()
+	if len(rest) == 0 {
+		return
+	}
+	m.list = append(m.list, rest...)
+	m.gl.Splice(m.gl.Len(), 0, rest...)
+}
+
+// claimPlaceholder replaces sectionID's placeholder (if any) in place with
+// it, as a single atomic Splice — never as an append followed by a
+// separate removal elsewhere in the list. A live GtkListView (see
+// copper-5g4) does not always recompute a trailing section's header
+// Start/NItems correctly across two separate splices in the same
+// mutation; one atomic splice never exposes that intermediate state.
+// Returns true if it claimed a placeholder (it is now in the model, at
+// the placeholder's old slot); false if the section had none, in which
+// case the caller still has to place it itself.
+func (m *Model) claimPlaceholder(it *Item) bool {
+	ph, ok := m.holder[it.SectionID]
+	if !ok {
+		return false
+	}
+	i := m.IndexOf(ph)
+	m.list[i] = it
+	m.gl.Splice(i, 1, it)
+	delete(m.holder, it.SectionID)
+	m.counts[it.SectionID]++
+	return true
 }
 
 // InsertAt inserts it at base position i, renumbering every later item's
@@ -186,13 +231,41 @@ func (m *Model) InsertAt(i int, it *Item) {
 	m.notifyInvalidate()
 }
 
-// RemoveAt removes the item at base position i.
+// RemoveAt removes the item at base position i. If it was the last real
+// note in its section, a fresh placeholder replaces it at the same slot
+// in one atomic Splice (see releasePlaceholder) — the same
+// two-splices-in-one-mutation pattern claimPlaceholder avoids on the
+// insert side.
 func (m *Model) RemoveAt(i int) {
 	it := m.list[i]
+	if !it.IsPlaceholder() {
+		m.counts[it.SectionID]--
+		if m.counts[it.SectionID] == 0 {
+			if _, exists := m.holder[it.SectionID]; !exists {
+				m.releasePlaceholder(i, it.SectionID)
+				return
+			}
+		}
+	}
 	m.list = append(m.list[:i], m.list[i+1:]...)
 	m.gl.Splice(i, 1)
-	m.bumpCount(it, -1)
+	// bumpCount's defensive full sync (see its own doc comment) still
+	// covers the rare case of RemoveAt landing on a placeholder's own
+	// index, or the invariant already having drifted before this call.
+	m.sync()
 	// Removing never reorders survivors relative to each other.
+}
+
+// releasePlaceholder installs a fresh placeholder for sectionID directly
+// at base position i — the release-side counterpart to claimPlaceholder;
+// see its doc comment for why this must be one atomic Splice, never a
+// removal followed by a separate append elsewhere in the list.
+func (m *Model) releasePlaceholder(i int, sectionID string) {
+	ph := &Item{SectionID: sectionID, kind: kindPlaceholder}
+	m.assignSeq(ph)
+	m.holder[sectionID] = ph
+	m.list[i] = ph
+	m.gl.Splice(i, 1, ph)
 }
 
 // Refresh re-binds it's row in place after a caller mutated its Body or
@@ -239,6 +312,8 @@ func (m *Model) Move(from, to int) {
 
 // Reset replaces every item (placeholders excluded — sync rebuilds them)
 // in one Splice, for an initial load or a search-filtered view swap.
+// Clears every item's Born first — see AppendAll's own doc comment for
+// why a bulk-loaded item must never satisfy justInserted().
 func (m *Model) Reset(items []*Item) {
 	m.gl.Splice(0, m.gl.Len())
 	m.list = nil
@@ -253,6 +328,7 @@ func (m *Model) Reset(items []*Item) {
 	// either slice.
 	cp := append([]*Item(nil), items...)
 	for _, it := range cp {
+		it.Born = time.Time{}
 		m.assignSeq(it)
 		if !it.IsPlaceholder() {
 			m.counts[it.SectionID]++
@@ -308,12 +384,16 @@ func (m *Model) reseq() {
 }
 
 // bumpCount adjusts the real-note count for it's section (placeholders
-// are not counted) and resyncs the placeholder invariant.
+// are not counted) and resyncs the placeholder invariant. Only InsertAt
+// still goes through this generic path — Append/AppendAll/RemoveAt claim
+// or release a section's placeholder atomically instead (see
+// claimPlaceholder/releasePlaceholder) so a live GtkListView never
+// observes the placeholder-swap as two separate splices (copper-5g4).
 func (m *Model) bumpCount(it *Item, delta int) {
 	if !it.IsPlaceholder() {
 		m.counts[it.SectionID] += delta
 	}
-	// Always resync, even for a placeholder: RemoveAt can be called on a
+	// Always resync, even for a placeholder: a caller can pass a
 	// placeholder's own base index (callers aren't required to filter
 	// them out first), and without this the invariant — exactly one
 	// placeholder per empty section — would stay broken until some

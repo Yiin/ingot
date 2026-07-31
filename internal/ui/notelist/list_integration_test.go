@@ -95,17 +95,7 @@ func TestHeaderBindFiresOncePerSectionWithCorrectRange(t *testing.T) {
 		t.Errorf("section a header = %+v, want {0 2}", binds[0])
 	}
 	if binds[1].start != 2 || binds[1].n != 1 {
-		// Verified live (copper-l2z.80): l.Model().Len(), l.filterModel.
-		// NItems(), l.sort.NItems() and l.sel.NItems() all correctly
-		// report 3 at this point — every layer of the filter/sort/
-		// selection chain agrees on the true item count. Only the
-		// trailing GtkListHeader's own Start()/NItems() disagrees,
-		// consistently reporting one extra item past the end of the
-		// model (reproduced identically via Append and AppendAll, and
-		// with a pump() between every mutation) — a GtkListView section-
-		// boundary quirk in the underlying GTK/gotk4 layer, not a
-		// pumping/mapping issue.
-		t.Skip("trailing section header reports an out-of-range NItems — see the doc comment above this Skip")
+		t.Errorf("section b header = %+v, want {2 1}", binds[1])
 	}
 }
 
@@ -226,19 +216,7 @@ func TestInsertingAtZeroGrowsTheFirstRowsAllocatedHeight(t *testing.T) {
 		}
 	}
 	if !strictlyIncreasing {
-		// Verified live (copper-l2z.80): sampling for a full 300ms — well
-		// past InsertAnimDuration's 180ms — still never shows any growth
-		// at all under this headless GSK_RENDERER=cairo harness; the row
-		// sits at its content's natural height (18px, no padding) the
-		// entire time. The CSS keyframe animates min-height/padding-top/
-		// padding-bottom/margin-top (style.css's ingot-row-in), and
-		// GTK's CSS engine does not appear to interpolate those box-model
-		// properties the way it does opacity/transform/color — the same
-		// GTK limitation Row.SetExpanded's own doc comment already
-		// documents for the collapse/expand case. Not a pumping/mapping
-		// issue: theme.Load, the window, and the row are all confirmed
-		// mapped and live at this point.
-		t.Skip("row height never grows under this GTK CSS engine/renderer — see the doc comment above this Skip")
+		t.Errorf("row height samples = %v, want at least one strict increase", samples)
 	}
 }
 

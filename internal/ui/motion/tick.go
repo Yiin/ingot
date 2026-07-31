@@ -10,9 +10,15 @@ import (
 // tickable is any widget gotk4 lets drive a frame-clock animation on —
 // every widget type satisfies it via its embedded gtk.Widget, so a
 // caller passes its own concrete widget (a *gtk.DrawingArea, a
-// *gtk.TextView, ...) with no wrapping needed.
+// *gtk.TextView, ...) with no wrapping needed. The parameter type must be
+// gtk.TickCallback itself, not the equivalent unnamed func literal type —
+// gtk.Widget.AddTickCallback is declared against the named type, and Go
+// interface satisfaction does not treat the two as interchangeable, so a
+// literal func type here would make no real gotk4 widget ever satisfy
+// this interface (caught before Animate had a single real caller: see
+// copper-5g4).
 type tickable interface {
-	AddTickCallback(func(gtk.Widgetter, gdk.FrameClocker) bool) uint
+	AddTickCallback(gtk.TickCallback) uint
 	RemoveTickCallback(id uint)
 }
 
