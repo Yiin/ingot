@@ -198,8 +198,21 @@ func TestRun_StartsMapsCapturesAndSingleInstances(t *testing.T) {
 	// Drive the composer like a user would and assert the note lands on
 	// disk with the on-disk grammar, exercising internal/app's wiring of
 	// internal/ui/composer to the store end to end.
+	//
+	// copper-l2z.83: a fresh `wtype` invocation drops its own first key
+	// event close to 100% of the time — reproduced in isolation (15+
+	// runs) by comparing a plain `wtype "text"` against one prefixed
+	// with a throwaway key. It is not a GTK/compositor focus race (a
+	// *separate* preceding `wtype -k End` call still lost the real
+	// text's first character every time — each process opens its own
+	// virtual-keyboard connection and uploads its own keymap, so a
+	// second invocation drops its own first event same as the first
+	// would have); it reproduces even while the panel already has
+	// keyboard focus. `-k End -s 300` presses a no-op key first and
+	// sleeps 300ms before the real text, all inside the one wtype
+	// process/connection, so only the throwaway keypress is ever lost.
 	const noteText = "ingot e2e smoke test note"
-	if out, err := exec.Command("wtype", noteText).CombinedOutput(); err != nil {
+	if out, err := exec.Command("wtype", "-k", "End", "-s", "300", noteText).CombinedOutput(); err != nil {
 		t.Fatalf("wtype: %v: %s", err, out)
 	}
 	if out, err := exec.Command("wtype", "-k", "Return").CombinedOutput(); err != nil {
