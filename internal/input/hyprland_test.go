@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -236,6 +237,48 @@ func TestNewHyprlandSourceResolvesSocketPathsFromEnv(t *testing.T) {
 	}
 	defer src.Close()
 	_ = gs
+}
+
+// TestHyprlandBindCommandsWireFormat asserts the exact command strings
+// sent over .socket.sock, against literals rather than against the
+// hyprlandNames/gsAppID vars themselves — copper-l2z.73 found that both
+// a stray config-file "= " and a missing gsAppID prefix on the
+// dispatcher arg pass silently through any test that only checks the
+// commands compile/format, since sendCommand never inspects the reply.
+func TestHyprlandBindCommandsWireFormat(t *testing.T) {
+	wantBind := []string{
+		"keyword bindn , Shift_L, global, lt.yiin.ingot:ingot:shiftl_down",
+		"keyword bindrn , Shift_L, global, lt.yiin.ingot:ingot:shiftl_up",
+		"keyword bindn , Shift_R, global, lt.yiin.ingot:ingot:shiftr_down",
+		"keyword bindrn , Shift_R, global, lt.yiin.ingot:ingot:shiftr_up",
+	}
+	if len(hyprlandBindCommands) != len(wantBind) {
+		t.Fatalf("len(hyprlandBindCommands) = %d, want %d", len(hyprlandBindCommands), len(wantBind))
+	}
+	for i, want := range wantBind {
+		if hyprlandBindCommands[i] != want {
+			t.Errorf("hyprlandBindCommands[%d] = %q, want %q", i, hyprlandBindCommands[i], want)
+		}
+	}
+
+	wantUnbind := []string{
+		"keyword unbind , Shift_L",
+		"keyword unbind , Shift_R",
+	}
+	if len(hyprlandUnbindCommands) != len(wantUnbind) {
+		t.Fatalf("len(hyprlandUnbindCommands) = %d, want %d", len(hyprlandUnbindCommands), len(wantUnbind))
+	}
+	for i, want := range wantUnbind {
+		if hyprlandUnbindCommands[i] != want {
+			t.Errorf("hyprlandUnbindCommands[%d] = %q, want %q", i, hyprlandUnbindCommands[i], want)
+		}
+	}
+
+	for _, cmd := range append(append([]string(nil), hyprlandBindCommands...), hyprlandUnbindCommands...) {
+		if strings.Contains(cmd, "=") {
+			t.Errorf("command %q contains a literal '=', which Hyprland's raw socket parser rejects", cmd)
+		}
+	}
 }
 
 func TestHyprlandSourceRegistersAllFourBinds(t *testing.T) {
