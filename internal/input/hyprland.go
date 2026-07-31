@@ -41,12 +41,21 @@ var hyprlandNames = struct {
 // Hyprland's non-consuming press/release bind flags — the "n" flag is
 // what the epic's live verification confirmed leaves Shift still
 // reaching the focused application, unlike a plain "bind" which would
-// swallow it.
+// swallow it. The leading "= " in "bindn = MODS, ..." is config-file
+// assignment syntax only; sent over the raw .socket.sock wire it makes
+// Hyprland reject the whole command ("Invalid mod, requested mod \"=\"
+// is not a valid mod"), confirmed live in copper-l2z.73 — so it must
+// never appear here. The dispatcher arg is prefixed with gsAppID + ":"
+// because Hyprland's global dispatcher splits its argument on the FIRST
+// colon into APPID/NAME (src/config/shared/actions/ConfigActions.cpp);
+// without that prefix the bare hyprlandNames.* id mis-splits and
+// isTaken() against the app_id registered in hyprland_globalshortcuts.go
+// silently never matches.
 var hyprlandBindCommands = []string{
-	"keyword bindn = , Shift_L, global, " + hyprlandNames.lDown,
-	"keyword bindrn = , Shift_L, global, " + hyprlandNames.lUp,
-	"keyword bindn = , Shift_R, global, " + hyprlandNames.rDown,
-	"keyword bindrn = , Shift_R, global, " + hyprlandNames.rUp,
+	"keyword bindn , Shift_L, global, " + gsAppID + ":" + hyprlandNames.lDown,
+	"keyword bindrn , Shift_L, global, " + gsAppID + ":" + hyprlandNames.lUp,
+	"keyword bindn , Shift_R, global, " + gsAppID + ":" + hyprlandNames.rDown,
+	"keyword bindrn , Shift_R, global, " + gsAppID + ":" + hyprlandNames.rUp,
 }
 
 // hyprlandUnbindCommands removes every bind hyprlandBindCommands
@@ -56,10 +65,11 @@ var hyprlandBindCommands = []string{
 // three duplicate binds, live-verified in copper-l2z.50 — so
 // registerBinds runs this unconditionally before every bind, not only
 // on Pause/Close, on the assumption that Shift_L/Shift_R carry no other
-// legitimate bind this process would be clobbering.
+// legitimate bind this process would be clobbering. Same "= " wire
+// caveat as hyprlandBindCommands applies here.
 var hyprlandUnbindCommands = []string{
-	"keyword unbind = , Shift_L",
-	"keyword unbind = , Shift_R",
+	"keyword unbind , Shift_L",
+	"keyword unbind , Shift_R",
 }
 
 // dialFunc opens a connection to a Hyprland IPC socket. Tests substitute
