@@ -2,7 +2,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty)
 LDFLAGS_RELEASE := -s -w -X github.com/Yiin/ingot/internal/buildinfo.version=$(VERSION)
 
-.PHONY: build run test test-integration vet fmt lint check release clean
+.PHONY: build run test test-integration vet fmt lint check release clean screenshot
 
 # No -trimpath here, unlike release: every distinct combination of build
 # flags forces a full cold rebuild of gotk4's ~160k lines of generated cgo
@@ -18,8 +18,19 @@ run:
 test:
 	go test ./...
 
+# Display- and Wayland-dependent tests are gated behind the integration
+# build tag and need a real (or headless) compositor to do anything but
+# skip themselves, so this runs them inside scripts/headless.sh's sway
+# session rather than the bare `go test`.
 test-integration:
-	go test -tags integration ./...
+	./scripts/headless.sh go test -tags integration ./...
+
+# Regenerates assets/screenshot.png from the same map-and-capture
+# machinery internal/layershell's screenshot test uses, so the README
+# image is reproducible instead of hand-made.
+screenshot:
+	INGOT_SCREENSHOT_OUT=$(CURDIR)/assets/screenshot.png \
+		./scripts/headless.sh go test -tags integration -count=1 -run TestScreenshot_MapsAndCapturesANonUniformImage -v ./internal/layershell/...
 
 # Plain `go vet` fails on internal/layershell: the gotk4 idiom for getting a
 # C pointer from a widget converts Native()'s uintptr to unsafe.Pointer,

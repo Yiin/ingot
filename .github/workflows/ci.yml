@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# ubuntu-latest's own GTK is a dead end for this project, twice over:
+# ubuntu-24.04 ships GTK 4.14.5 (gotk4 is generated against 4.22.4, so it
+# fails to compile against 4.14 headers) and has no libgtk4-layer-shell-dev
+# package at all until ubuntu-25.10. archlinux:latest carries gtk4 4.22.4
+# and gtk4-layer-shell 1.3.0 in [extra], so both jobs run inside it instead
+# of on the runner's native Ubuntu. Kept to a single container entry, no Go
+# version matrix: each cold cgo build of gotk4 costs 4-10 minutes.
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: pacman -Sy --noconfirm --needed base-devel git go gtk4 gtk4-layer-shell pkgconf golangci-lint
+
+      - uses: actions/checkout@v4
+
+      - name: Resolve GTK version for the cache key
+        id: gtk
+        run: echo "version=$(pkg-config --modversion gtk4)" >> "$GITHUB_OUTPUT"
+
+      # actions/setup-go is skipped deliberately: it would fetch its own Go
+      # toolchain instead of using the distro package the cgo build was
+      # tested against, and this job needs cache control over
+      # GOCACHE/GOMODCACHE anyway. Go does not hash C headers
+      # (golang/go#24355, still open), so the cache key folds in the GTK
+      # version — a cache restored from an older GTK would otherwise be
+      # silently reused against the new headers.
+      - name: Cache Go build and module caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.gocache
+            ${{ github.workspace }}/.gomodcache
+          key: go-${{ hashFiles('go.sum') }}-gtk${{ steps.gtk.outputs.version }}
+          restore-keys: |
+            go-${{ hashFiles('go.sum') }}-gtk-
+
+      - name: make check
+        env:
+          GOCACHE: ${{ github.workspace }}/.gocache
+          GOMODCACHE: ${{ github.workspace }}/.gomodcache
+        run: make check
+
+  integration:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      # The evdev half of this project (internal/input) cannot run here:
+      # GitHub-hosted runners have no /dev/input/event* device nodes. That
+      # is exactly why the double-Shift chord detector is a pure state
+      # machine behind an interface (internal/hotkey) — its unit tests
+      # cover it without touching a real keyboard, and only the pure-Go
+      # `check` job needs to pass for that coverage to count.
+      - name: Install dependencies
+        run: |
+          pacman -Sy --noconfirm --needed base-devel git go gtk4 gtk4-layer-shell pkgconf \
+            sway grim wtype wl-clipboard
+
+      - uses: actions/checkout@v4
+
+      - name: Resolve GTK version for the cache key
+        id: gtk
+        run: echo "version=$(pkg-config --modversion gtk4)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Go build and module caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.gocache
+            ${{ github.workspace }}/.gomodcache
+          key: go-${{ hashFiles('go.sum') }}-gtk${{ steps.gtk.outputs.version }}
+          restore-keys: |
+            go-${{ hashFiles('go.sum') }}-gtk-
+
+      - name: make test-integration
+        env:
+          GOCACHE: ${{ github.workspace }}/.gocache
+          GOMODCACHE: ${{ github.workspace }}/.gomodcache
+        run: make test-integration
