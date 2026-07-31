@@ -27,12 +27,20 @@ func newCheckIcon() *gtk.DrawingArea {
 }
 
 func drawCheckIcon(_ *gtk.DrawingArea, cr *cairo.Context, width, height int) {
+	// Read at draw time so a colour-scheme change repaints in the new
+	// palette — see theme.Colors. The mark inverts between schemes: dark
+	// circle with a light tick on light, light circle with a dark tick on
+	// dark.
+	colors := theme.Colors()
+
 	cx, cy := float64(width)/2, float64(height)/2
 	radius := float64(theme.ToastIconSize) / 2
 
+	br, bg, bb := theme.ParseRGB(colors.ToastIconBg)
+
 	cr.NewPath()
 	cr.Arc(cx, cy, radius, 0, 2*math.Pi)
-	cr.SetSourceRGB(0, 0, 0)
+	cr.SetSourceRGB(br, bg, bb)
 	cr.Fill()
 
 	// Same three-point tick geometry as widget.Checkbox's drawTick, at
@@ -49,6 +57,7 @@ func drawCheckIcon(_ *gtk.DrawingArea, cr *cairo.Context, width, height int) {
 	cr.SetLineWidth(theme.CheckStroke)
 	cr.SetLineCap(cairo.LineCapRound)
 	cr.SetLineJoin(cairo.LineJoinRound)
-	cr.SetSourceRGB(1, 1, 1)
+	tr, tg, tb := theme.ParseRGB(colors.ToastIconTick)
+	cr.SetSourceRGB(tr, tg, tb)
 	cr.Stroke()
 }

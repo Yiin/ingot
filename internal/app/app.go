@@ -63,6 +63,7 @@ type App struct {
 	src         input.Source
 	lock        session.LockState
 	gateCancel  context.CancelFunc
+	schemeStop  func()
 	stopSignals context.CancelFunc
 
 	menuActions *menus.Actions
@@ -174,6 +175,10 @@ func (a *App) startup() error {
 	if err := theme.Load(gdk.DisplayGetDefault()); err != nil {
 		slog.Warn("app: theme.Load failed, styling degraded", "err", err)
 	}
+	// theme.Load already applied the scheme the desktop reports now; this
+	// keeps following it. The portal signal arrives on its own goroutine,
+	// so Post is what carries the restyle back to the GTK thread.
+	a.schemeStop = theme.Watch(gdk.DisplayGetDefault(), a.gapp.Post)
 
 	toaster, err := toast.New(slog.Default())
 	if err != nil {

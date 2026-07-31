@@ -150,13 +150,19 @@ func TestSelectedRowLabelColorMatchesInk(t *testing.T) {
 		t.Fatal("row did not report itself selected after SelectRow")
 	}
 
+	// theme.Colors().Ink, not theme.Ink: theme.Load resolves the
+	// desktop's colour scheme, so on a dark session --ink is the dark
+	// palette's. What this test guards is that the row's selected chrome
+	// does not override --ink, whichever palette that is.
+	ink := theme.Colors().Ink
+
 	// gdk.RGBA wraps a cgo-allocated pointer (gextras.StructNative), so a
 	// bare `var want gdk.RGBA` leaves that pointer nil and Parse segfaults
 	// dereferencing it — construct through gdk.NewRGBA to get a real
 	// allocation first.
 	want := gdk.NewRGBA(0, 0, 0, 1)
-	if !want.Parse(theme.Ink) {
-		t.Fatalf("gdk.RGBA.Parse(%q) failed", theme.Ink)
+	if !want.Parse(ink) {
+		t.Fatalf("gdk.RGBA.Parse(%q) failed", ink)
 	}
 
 	got := label.StyleContext().Color()

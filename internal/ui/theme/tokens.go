@@ -197,3 +197,324 @@ const (
 	// regardless of how much of this window has elapsed.
 	EditorSaveDebounceMs = 400
 )
+
+// Tokens that exist in both palettes because a rule or a cairo drawer
+// needs them by name. Each one either replaces a literal that used to sit
+// inline (so the dark palette has something to override) or is new to the
+// selectors added for the dark scheme. The light values are the literals
+// that were already shipping — none of them is a new colour decision.
+const (
+	// DragShadow was the literal box-shadow on .note-card.dragging in
+	// style.css.
+	DragShadow = "0 6px 16px rgba(0,0,0,.18)"
+
+	// Reject was the literal #E5484D on .composer.reject in style.css.
+	Reject = "#E5484D"
+
+	// ToastIconBg and ToastIconTick were cr.SetSourceRGB(0,0,0) and
+	// cr.SetSourceRGB(1,1,1) in internal/ui/toast/icon.go — the light
+	// toast's filled circle and the tick inscribed in it.
+	ToastIconBg   = "#000000"
+	ToastIconTick = "#FFFFFF"
+
+	// SelectionBg is the text-selection highlight behind selected
+	// characters in the composer, the search entry and the editor. GTK's
+	// own `selection` node has no Ingot rule until now, so Adwaita's
+	// (near-white on dark) was showing through.
+	SelectionBg = "rgba(10,108,255,.28)"
+
+	// OverlayHover and OverlayActive are the tint laid over a surface for
+	// the two pointer states on buttons that paint no fill of their own
+	// (the overflow button, popover menu items, the empty-state Clear
+	// search button). Light darkens, dark lightens — which is exactly why
+	// they cannot be one constant.
+	OverlayHover  = "rgba(0,0,0,.06)"
+	OverlayActive = "rgba(0,0,0,.10)"
+
+	// MenuBg is the GtkPopoverMenu contents fill. Not the card or field
+	// surface: a menu floats over the panel rather than sitting in it.
+	MenuBg = "#FFFFFF"
+
+	// HighlightBg tints a search match inside a note's rendered body
+	// (internal/ui/mdpango's writeHighlighted). It is the accent at 12%
+	// alpha, and it is the one colour token that never becomes a CSS
+	// custom property: it is emitted as a Pango <span background=...>
+	// attribute, which GTK's CSS engine never sees.
+	//
+	// The 8-digit #RRGGBBAA form is deliberate and verified — Pango's
+	// markup parser accepts both #RRGGBB and #RRGGBBAA, so do not
+	// "correct" this to 6 digits and lose the alpha.
+	HighlightBg = "#0A6CFF1F"
+)
+
+// The dark palette. Unlike every light value above, no demo footage
+// exists for a dark variant of the original app, so these are Ingot's own
+// contract rather than a measurement. They were chosen to preserve the
+// light palette's relationships, not to invert it channel by channel:
+//
+//   - the panel is the darkest surface, and cards and fields are raised
+//     above it rather than cut into it;
+//   - the card surface stays warm (blue is its lowest channel) and the
+//     search/composer field surface stays cool (blue is its highest), the
+//     same deliberate warm/cool split the light palette measures;
+//   - the selected card stays blue-tinted against both.
+const (
+	DarkPanelBg = "#1B1C1F"
+
+	// DarkPanelRim carries more alpha than PanelRim's light .40 does work,
+	// because in dark it is the only thing drawing the panel's edge. The
+	// light panel is separated from the desktop by a drop shadow that
+	// reads against a bright wallpaper; against a dark or black desktop
+	// that same shadow is invisible (the panel is 1.23:1 against true
+	// black), so the rim is the edge.
+	DarkPanelRim             = "rgba(255,255,255,.12)"
+	DarkPanelShadow          = "0 8px 28px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.35)"
+	DarkPanelShadowUnfocused = "0 4px 14px rgba(0,0,0,.35), 0 1px 4px rgba(0,0,0,.18)"
+
+	DarkCardBg         = "#282725"
+	DarkCardBgHover    = "#333230"
+	DarkCardBgSelected = "#1E3555"
+	DarkFieldBg        = "#25272B"
+
+	DarkInk      = "#E9EAEC"
+	DarkInkMuted = "#9A9DA3"
+
+	// DarkInkDone is lighter than a straight tonal mirror of InkDone would
+	// be, because the mirror (#7C7F85) measured only 3.72:1 on DarkCardBg
+	// — below the 4.5:1 body target and worse than the light palette's own
+	// 4.77:1 there.
+	//
+	// This value's measured contrast, and a recorded decision to stop
+	// here rather than keep climbing:
+	//
+	//	DarkPanelBg         5.26:1  pass
+	//	DarkCardBg          4.60:1  pass
+	//	DarkCardBgHover     3.95:1  fail
+	//	DarkCardBgSelected  3.82:1  fail
+	//
+	// The two failures are the transient states: hover lasts as long as
+	// the pointer rests on the row, selected as long as the row is picked.
+	// Clearing 4.5:1 on all four needs roughly #9A9DA3, which IS
+	// DarkInkMuted — so buying those two states costs the done-versus-
+	// muted distinction the palette draws deliberately, and a done note
+	// would become indistinguishable from a section header.
+	//
+	// All-surface AA was never this design's bar: the measured light spec
+	// is itself sub-AA here, InkDone on PanelBg being 4.06:1. Colour is
+	// also the secondary done cue — internal/ui/widget's drawStrike paints
+	// a strikethrough over the whole row, which carries the state on its
+	// own and does not depend on contrast at all.
+	DarkInkDone = "#8C8F95"
+
+	DarkRule = "rgba(255,255,255,.10)"
+
+	DarkCheckRing    = "#8B8E94"
+	DarkAccent       = "#4C8DFF"
+	DarkFocusRingDim = "rgba(76,141,255,.45)"
+
+	DarkPlaceholderBorder = "rgba(255,255,255,.14)"
+	DarkScrollbarInk      = "rgba(255,255,255,.30)"
+
+	DarkToastDarkBg    = "#232326"
+	DarkToastDarkText  = "#FFFFFF"
+	DarkToastLightBg   = "rgba(58,58,62,.72)"
+	DarkToastLightText = DarkInk
+
+	DarkDragShadow    = "0 6px 18px rgba(0,0,0,.55)"
+	DarkReject        = "#FF6369"
+	DarkToastIconBg   = "#E9EAEC"
+	DarkToastIconTick = "#1B1C1F"
+	DarkSelectionBg   = "rgba(76,141,255,.35)"
+	DarkOverlayHover  = "rgba(255,255,255,.08)"
+	DarkOverlayActive = "rgba(255,255,255,.13)"
+	DarkMenuBg        = "#2E2D31"
+
+	// DarkHighlightBg is the dark accent at 20%, not the light palette's
+	// 12%: a 12% tint of any colour over #282725 is nearly invisible, so
+	// the search match would read as unhighlighted.
+	DarkHighlightBg = "#4C8DFF33"
+)
+
+// Palette is every colour token of one scheme in a single value. Sizes,
+// durations and type are not in here on purpose: they do not change with
+// the colour scheme, so style.css remains their only consumer.
+//
+// Two things read a Palette. style.css reads it indirectly, through the
+// CSS custom properties tokens() emits; the cairo DrawFuncs in
+// internal/ui/widget, internal/ui/notelist and internal/ui/toast read it
+// directly through Colors(), because they paint outside GTK's CSS engine
+// and so have no var() to resolve.
+type Palette struct {
+	PanelBg              string
+	PanelRim             string
+	PanelShadow          string
+	PanelShadowUnfocused string
+
+	CardBg         string
+	CardBgHover    string
+	CardBgSelected string
+	FieldBg        string
+
+	Ink      string
+	InkMuted string
+	InkDone  string
+	Rule     string
+
+	CheckRing    string
+	Accent       string
+	FocusRingDim string
+
+	PlaceholderBorder string
+	ScrollbarInk      string
+
+	ToastDarkBg    string
+	ToastDarkText  string
+	ToastLightBg   string
+	ToastLightText string
+
+	DragShadow    string
+	Reject        string
+	ToastIconBg   string
+	ToastIconTick string
+	SelectionBg   string
+	OverlayHover  string
+	OverlayActive string
+	MenuBg        string
+
+	// HighlightBg is deliberately absent from tokens(): it is a Pango
+	// attribute value, not a CSS custom property. See its constant.
+	HighlightBg string
+}
+
+// Light is the measured light palette. Every field is built from the
+// constant above it rather than from a fresh literal, so a colour has
+// exactly one spelling in this package.
+//
+// The measured constants are pinned by TestTokensMatchSpec; the tokens
+// this change added (DragShadow, Reject, ToastIconBg, ToastIconTick,
+// SelectionBg, OverlayHover, OverlayActive, MenuBg, HighlightBg) are
+// pinned by TestNewLightTokensMatchSpec instead, because they are not
+// part of the measured demo spec that test guards.
+var Light = Palette{
+	PanelBg:              PanelBg,
+	PanelRim:             PanelRim,
+	PanelShadow:          PanelShadow,
+	PanelShadowUnfocused: PanelShadowUnfocused,
+
+	CardBg:         CardBg,
+	CardBgHover:    CardBgHover,
+	CardBgSelected: CardBgSelected,
+	FieldBg:        FieldBg,
+
+	Ink:      Ink,
+	InkMuted: InkMuted,
+	InkDone:  InkDone,
+	Rule:     Rule,
+
+	CheckRing:    CheckRing,
+	Accent:       Accent,
+	FocusRingDim: FocusRingDim,
+
+	PlaceholderBorder: PlaceholderBorder,
+	ScrollbarInk:      ScrollbarInk,
+
+	ToastDarkBg:    ToastDarkBg,
+	ToastDarkText:  ToastDarkText,
+	ToastLightBg:   ToastLightBg,
+	ToastLightText: ToastLightText,
+
+	DragShadow:    DragShadow,
+	Reject:        Reject,
+	ToastIconBg:   ToastIconBg,
+	ToastIconTick: ToastIconTick,
+	SelectionBg:   SelectionBg,
+	OverlayHover:  OverlayHover,
+	OverlayActive: OverlayActive,
+	MenuBg:        MenuBg,
+	HighlightBg:   HighlightBg,
+}
+
+// Dark is the dark palette described above the Dark* constants.
+var Dark = Palette{
+	PanelBg:              DarkPanelBg,
+	PanelRim:             DarkPanelRim,
+	PanelShadow:          DarkPanelShadow,
+	PanelShadowUnfocused: DarkPanelShadowUnfocused,
+
+	CardBg:         DarkCardBg,
+	CardBgHover:    DarkCardBgHover,
+	CardBgSelected: DarkCardBgSelected,
+	FieldBg:        DarkFieldBg,
+
+	Ink:      DarkInk,
+	InkMuted: DarkInkMuted,
+	InkDone:  DarkInkDone,
+	Rule:     DarkRule,
+
+	CheckRing:    DarkCheckRing,
+	Accent:       DarkAccent,
+	FocusRingDim: DarkFocusRingDim,
+
+	PlaceholderBorder: DarkPlaceholderBorder,
+	ScrollbarInk:      DarkScrollbarInk,
+
+	ToastDarkBg:    DarkToastDarkBg,
+	ToastDarkText:  DarkToastDarkText,
+	ToastLightBg:   DarkToastLightBg,
+	ToastLightText: DarkToastLightText,
+
+	DragShadow:    DarkDragShadow,
+	Reject:        DarkReject,
+	ToastIconBg:   DarkToastIconBg,
+	ToastIconTick: DarkToastIconTick,
+	SelectionBg:   DarkSelectionBg,
+	OverlayHover:  DarkOverlayHover,
+	OverlayActive: DarkOverlayActive,
+	MenuBg:        DarkMenuBg,
+	HighlightBg:   DarkHighlightBg,
+}
+
+// tokens maps every field of p to the CSS custom property style.css
+// declares it under. The names must match style.css's :root block
+// exactly — TestLightTokensMatchStylesheet is what actually enforces
+// that, and the dark override provider (scheme.go) is generated straight
+// from this map, so a typo here would silently stop overriding one token.
+func (p Palette) tokens() map[string]string {
+	return map[string]string{
+		"--panel-bg":               p.PanelBg,
+		"--panel-rim":              p.PanelRim,
+		"--panel-shadow":           p.PanelShadow,
+		"--panel-shadow-unfocused": p.PanelShadowUnfocused,
+
+		"--card-bg":          p.CardBg,
+		"--card-bg-hover":    p.CardBgHover,
+		"--card-bg-selected": p.CardBgSelected,
+		"--field-bg":         p.FieldBg,
+
+		"--ink":       p.Ink,
+		"--ink-muted": p.InkMuted,
+		"--ink-done":  p.InkDone,
+		"--rule":      p.Rule,
+
+		"--check-ring":     p.CheckRing,
+		"--accent":         p.Accent,
+		"--focus-ring-dim": p.FocusRingDim,
+
+		"--placeholder-border": p.PlaceholderBorder,
+		"--scrollbar-ink":      p.ScrollbarInk,
+
+		"--toast-dark-bg":    p.ToastDarkBg,
+		"--toast-dark-text":  p.ToastDarkText,
+		"--toast-light-bg":   p.ToastLightBg,
+		"--toast-light-text": p.ToastLightText,
+
+		"--drag-shadow":     p.DragShadow,
+		"--reject":          p.Reject,
+		"--toast-icon-bg":   p.ToastIconBg,
+		"--toast-icon-tick": p.ToastIconTick,
+		"--selection-bg":    p.SelectionBg,
+		"--overlay-hover":   p.OverlayHover,
+		"--overlay-active":  p.OverlayActive,
+		"--menu-bg":         p.MenuBg,
+	}
+}

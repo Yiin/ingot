@@ -318,7 +318,9 @@ func (r *Row) drawStrike(_ *gtk.DrawingArea, cr *cairo.Context, width, height in
 		return
 	}
 	y := float64(theme.LineBody) / 2
-	ir, ig, ib := hexRGB(theme.InkDone)
+	// Read at draw time so a colour-scheme change repaints in the new
+	// palette — see theme.Colors.
+	ir, ig, ib := theme.ParseRGB(theme.Colors().InkDone)
 
 	cr.NewPath()
 	cr.MoveTo(0, y)

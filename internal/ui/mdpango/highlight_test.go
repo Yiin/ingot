@@ -5,7 +5,48 @@ import (
 	"testing"
 
 	"github.com/diamondburned/gotk4/pkg/pango"
+
+	"github.com/Yiin/ingot/internal/ui/theme"
 )
+
+// hl wraps s in the highlight span these tests expect. It reads
+// HighlightBackground rather than hardcoding the light accent, so these
+// assertions stay about the markup structure and do not quietly pin the
+// light colour scheme.
+func hl(s string) string {
+	return `<span background="` + HighlightBackground() + `">` + s + `</span>`
+}
+
+// TestHighlightBackgroundFollowsTheScheme is what actually pins the fix
+// for copper-cvj's last hardcoded colour. HighlightBackground used to be
+// a package constant, and every other test here would still pass if it
+// were reverted to one — they compare rendered markup against itself.
+// This one fails the moment the emitted span stops tracking the palette,
+// which is the bug: a search match tinted with the light accent on a dark
+// card, where a 12% tint is close to invisible.
+func TestHighlightBackgroundFollowsTheScheme(t *testing.T) {
+	body := "find the needle here"
+	start := strings.Index(body, "needle")
+	ranges := [][2]int{{start, start + len("needle")}}
+
+	restore := theme.OverrideScheme(theme.SchemeLight)
+	light := FullHighlighted(body, ranges)
+	restore()
+
+	restore = theme.OverrideScheme(theme.SchemeDark)
+	dark := FullHighlighted(body, ranges)
+	restore()
+
+	if light == dark {
+		t.Fatalf("FullHighlighted rendered identically in both schemes (%q) — the highlight colour is not following the palette", light)
+	}
+	if want := `background="` + theme.HighlightBg + `"`; !strings.Contains(light, want) {
+		t.Errorf("light render = %q, want it to contain %q", light, want)
+	}
+	if want := `background="` + theme.DarkHighlightBg + `"`; !strings.Contains(dark, want) {
+		t.Errorf("dark render = %q, want it to contain %q", dark, want)
+	}
+}
 
 func TestHighlightComposesWithBold(t *testing.T) {
 	body := "This is **bold text** here"
@@ -13,7 +54,7 @@ func TestHighlightComposesWithBold(t *testing.T) {
 	end := start + len("bold")
 
 	got := FullHighlighted(body, [][2]int{{start, end}})
-	want := `This is <b><span background="#0A6CFF1F">bold</span> text</b> here`
+	want := `This is <b>` + hl("bold") + ` text</b> here`
 	if got != want {
 		t.Errorf("FullHighlighted(%q) = %q, want %q", body, got, want)
 	}
@@ -25,7 +66,7 @@ func TestHighlightPlainText(t *testing.T) {
 	end := start + len("needle")
 
 	got := FullHighlighted(body, [][2]int{{start, end}})
-	want := `find the <span background="#0A6CFF1F">needle</span> in the haystack`
+	want := `find the ` + hl("needle") + ` in the haystack`
 	if got != want {
 		t.Errorf("FullHighlighted(%q) = %q, want %q", body, got, want)
 	}
@@ -40,7 +81,7 @@ func TestHighlightSpanningTwoTextRuns(t *testing.T) {
 	// even if the caller's ranges did.
 	body := "bo*ld* one"
 	got := FullHighlighted(body, [][2]int{{0, 2}, {3, 5}})
-	want := `<span background="#0A6CFF1F">bo</span><i><span background="#0A6CFF1F">ld</span></i> one`
+	want := hl("bo") + `<i>` + hl("ld") + `</i> one`
 	if got != want {
 		t.Errorf("FullHighlighted(%q) = %q, want %q", body, got, want)
 	}

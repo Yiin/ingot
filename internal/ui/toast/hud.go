@@ -58,6 +58,11 @@ func NewHUD() (*HUD, error) {
 	win := gtk.NewWindow()
 	win.SetDecorated(false)
 	win.SetResizable(false)
+	// The surface is a plain rectangle behind a 17dp-radius toast, so
+	// GTK's own window background shows as a grey square at the corners.
+	// theme's stylesheet clears it through this class, the same way it
+	// does for the panel window.
+	win.AddCSSClass(theme.ToastWindowClass)
 
 	label := newToastLabel()
 	box := gtk.NewBox(gtk.OrientationHorizontal, theme.ToastIconGap)

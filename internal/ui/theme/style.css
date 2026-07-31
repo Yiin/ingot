@@ -8,7 +8,7 @@
  *   Supported: custom properties, transition, @keyframes, box-shadow,
  *     border-radius, filter, backdrop-filter, opacity, transform, calc,
  *     gradients, outline, :focus-visible, letter-spacing, text-shadow,
- *     font-feature-settings, line-height.
+ *     font-feature-settings, line-height, caret-color.
  *   Rejected (each logs "No property named ..." — do not re-add them):
  *     display, position, top, z-index, cursor, will-change, overflow,
  *     aspect-ratio.
@@ -91,9 +91,28 @@
   --editor-font: 15;
   --editor-line: 22;
 
+  /* --focus-ring-color is var()-to-var(), and that indirection re-resolves
+   * across the dark provider — verified by running code under headless
+   * sway: with only --accent overridden by the second provider, a focus
+   * ring's computed colour went rgb(10,108,255) -> rgb(76,141,255). This
+   * is load-bearing. theme.Dark deliberately defines no --focus-ring-color
+   * of its own, so every ring in this file depends on that re-resolution. */
   --focus-ring-color: var(--accent);
+  --focus-ring-dim: rgba(10,108,255,.45);
   --panel-shadow-unfocused: 0 4px 14px rgba(0,0,0,.10), 0 1px 4px rgba(0,0,0,.04);
   --panel-hint-pad: 40;
+
+  /* Colours that used to be literals inside a rule (or inside a cairo
+   * DrawFunc) and now need a name, so theme.Dark can override them. See
+   * tokens.go for where each one came from. */
+  --drag-shadow: 0 6px 16px rgba(0,0,0,.18);
+  --reject: #E5484D;
+  --toast-icon-bg: #000000;
+  --toast-icon-tick: #FFFFFF;
+  --selection-bg: rgba(10,108,255,.28);
+  --overlay-hover: rgba(0,0,0,.06);
+  --overlay-active: rgba(0,0,0,.10);
+  --menu-bg: #FFFFFF;
 
   --font-family: "Inter Variable", "Adwaita Sans", "Cantarell", sans-serif;
 }
@@ -131,7 +150,7 @@ window.ingot-panel-window.background {
  * every ring below — never dim card fills, text or done state. Not shown
  * in the demo; internal/ui/panel's own contract. */
 .ingot-panel.unfocused {
-  --focus-ring-color: rgba(10,108,255,.45);
+  --focus-ring-color: var(--focus-ring-dim);
   box-shadow: var(--panel-shadow-unfocused), inset 0 1px 0 var(--panel-rim);
 }
 
@@ -209,7 +228,13 @@ window.ingot-panel-window.background {
  * 300ms — internal/ui/panel calls internal/ui/notelist's FlashDuplicate
  * in response to "capture duplicates the newest note." Not shown in the
  * original; Ingot's own contract, like .dragging. Kept in sync with
- * DuplicateFlashDuration by TestDuplicateFlashDurationMatchesCSS. */
+ * DuplicateFlashDuration by TestDuplicateFlashDurationMatchesCSS.
+ *
+ * The blue stays a literal rather than becoming var(--accent): whether
+ * GTK resolves a custom property inside a @keyframes block is unverified
+ * here, and a silently-unresolved var() would flash the inherited text
+ * colour instead. This exact blue reads on both schemes anyway, since it
+ * is only ever drawn as a ring over a card. */
 @keyframes ingot-duplicate-flash {
   0%, 40%, 100% { outline-color: rgba(10,108,255,0); }
   20%, 60% { outline-color: rgba(10,108,255,1); }
@@ -233,7 +258,7 @@ window.ingot-panel-window.background {
 
 /* Not shown in the original — copper-l2z.20's own contract for reordering. */
 .note-card.dragging {
-  box-shadow: 0 6px 16px rgba(0,0,0,.18);
+  box-shadow: var(--drag-shadow);
   transform: scale(1.02);
   opacity: .95;
 }
@@ -270,6 +295,10 @@ window.ingot-panel-window.background {
   background: none;
   padding-left: calc(var(--content-inset) * 1px);
   padding-right: calc(var(--content-inset) * 1px);
+  /* Adwaita sets `listview { color: white }`, and only the `> row` rule
+   * below resets it — which misses anything the list paints that is not
+   * inside a row (a header's label, the placeholder card's text). */
+  color: var(--ink);
 }
 
 .ingot-notelist > row,
@@ -300,6 +329,12 @@ window.ingot-panel-window.background {
 /* The overlay scrollbar: fades in fast, holds, fades out slow after the
  * last scroll — internal/ui/notelist toggles .scrolling. */
 .ingot-scrollbar {
+  /* The "scrollbar" node itself, not just its trough/slider children
+   * below. internal/ui/notelist/scrollbar.go:25 builds a bare
+   * gtk.NewScrollbar, so Adwaita's own `scrollbar` rule applies here and
+   * fills the whole 5px strip (#cecece light, #313131 dark) behind the
+   * slider every time .scrolling fades the bar in. */
+  background: none;
   min-width: calc(var(--scrollbar-w) * 1px);
   margin-right: calc(var(--scrollbar-inset) * 1px);
   opacity: 0;
@@ -338,9 +373,14 @@ window.ingot-panel-window.background {
 }
 
 /* The overflow MenuButton: same fill as the search field, circular, glyph
- * in --ink-muted via GTK's symbolic-icon recoloring. */
+ * in --ink-muted via GTK's symbolic-icon recoloring.
+ *
+ * The fill is deliberately NOT painted here. This class sits on the
+ * GtkMenuButton, whose own "menubutton" node draws nothing; the node GTK
+ * actually paints is the "button" child inside it, styled below. Painting
+ * both would double the fill through the button's own rounded edge. */
 .overflow-btn {
-  background-color: var(--field-bg);
+  background-color: transparent;
   min-width: calc(var(--overflow-btn) * 1px);
   min-height: calc(var(--overflow-btn) * 1px);
   border-radius: calc(var(--overflow-btn) * 1px);
@@ -363,7 +403,7 @@ window.ingot-panel-window.background {
 
 /* A whitespace-only commit attempt: 200ms reddish ring flash. */
 .composer.reject {
-  box-shadow: 0 0 0 calc(var(--focus-ring) * 1px) #E5484D;
+  box-shadow: 0 0 0 calc(var(--focus-ring) * 1px) var(--reject);
 }
 
 .composer-placeholder {
@@ -510,7 +550,362 @@ checkbutton check:checked {
 .editor-view {
   background-color: var(--card-bg);
   color: var(--ink);
+  caret-color: var(--ink);
   font-family: var(--font-family);
   font-size: calc(var(--editor-font) * 1px);
   line-height: calc(var(--editor-line) * 1px);
+}
+
+/* ---------------------------------------------------------------------
+ * GTK's own internal nodes.
+ *
+ * Everything above styles the node Ingot puts a class on. The rules below
+ * style the nodes GTK builds underneath those, which the system theme
+ * still reaches even though Ingot's class does not. That gap is the whole
+ * dark-desktop bug (copper-cvj): on a dark system, an unstyled internal
+ * node keeps Adwaita's near-black fill or its white text inside an
+ * otherwise light panel. Each block names the widget it covers and what
+ * leaked without it.
+ * ------------------------------------------------------------------ */
+
+/* The overflow button (internal/ui/searchbar's GtkMenuButton,
+ * searchbar.go:65). menubutton draws nothing; this inner "button" node is
+ * what GTK paints, and unstyled it took Adwaita's whole button treatment
+ * — fill, border and shadow — rendering near-black on a dark system. */
+.overflow-btn > button {
+  background-image: none;
+  background-color: var(--field-bg);
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  min-width: calc(var(--overflow-btn) * 1px);
+  min-height: calc(var(--overflow-btn) * 1px);
+  border-radius: calc(var(--overflow-btn) * 1px);
+  color: var(--ink-muted);
+}
+
+/* :backdrop is not an edge case for this button. The panel is a
+ * layer-shell surface that spends most of its life unfocused, so
+ * Adwaita's own button:backdrop rule would be the one painting it
+ * nearly all the time.
+ *
+ * This rule MUST stay above the :hover/:active rules below. All three
+ * have the same specificity, so the last matching one wins — and a
+ * pointer over an unfocused panel matches both. Ordered the other way,
+ * :backdrop would erase the hover tint in the very state the panel is
+ * almost always in, i.e. hover feedback would essentially never show. */
+.overflow-btn > button:backdrop {
+  background-image: none;
+  background-color: var(--field-bg);
+  box-shadow: none;
+  color: var(--ink-muted);
+}
+
+/* The two pointer states, as a flat overlay over the field fill rather
+ * than a second colour: a one-stop linear-gradient is the only way GTK
+ * CSS lets a translucent tint composite onto background-color, since it
+ * has no colour-mix(). */
+.overflow-btn > button:hover {
+  background-image: linear-gradient(to bottom, var(--overlay-hover), var(--overlay-hover));
+}
+
+.overflow-btn > button:active,
+.overflow-btn > button:checked {
+  background-image: linear-gradient(to bottom, var(--overlay-active), var(--overlay-active));
+}
+
+/* The composer (internal/ui/composer's GtkTextView, composer.go:88). The
+ * class lands on the "textview" node, which Adwaita fills through its own
+ * .view rule (#2d2d2d on a dark system) — that fill is what made the
+ * composer read as a near-black slab inside the light panel. The inner
+ * "text" node needs its own rule even though it is already transparent:
+ * it carries Adwaita's white foreground, and an explicit declaration on
+ * the child beats an inherited one no matter which provider set it. */
+.composer-text {
+  background-color: transparent;
+}
+
+.composer-text > text {
+  background-color: transparent;
+  color: var(--ink);
+  caret-color: var(--ink);
+}
+
+.composer-text selection {
+  background-color: var(--selection-bg);
+  color: var(--ink);
+}
+
+/* The search entry (internal/ui/searchbar's GtkText, searchbar.go:50).
+ * A GtkText IS the "text" node, so unlike the composer there is no outer
+ * node to reset — but its placeholder and selection children are separate
+ * nodes and kept Adwaita's colours. */
+.search-entry {
+  background-color: transparent;
+  color: var(--ink);
+  caret-color: var(--ink);
+}
+
+.search-entry placeholder {
+  color: var(--ink-muted);
+}
+
+.search-entry selection {
+  background-color: var(--selection-bg);
+  color: var(--ink);
+}
+
+/* The editor body's inner text node (internal/ui/editorwindow's
+ * GtkTextView, window.go:54) — same textview/text split as the composer
+ * above, with the card fill left on the outer node. */
+.editor-view > text {
+  background-color: transparent;
+  color: var(--ink);
+  caret-color: var(--ink);
+}
+
+.editor-view selection {
+  background-color: var(--selection-bg);
+  color: var(--ink);
+}
+
+/* The editor's toplevel GtkWindow (internal/ui/editorwindow/window.go:67).
+ * Unlike the panel window this one must paint — it is an ordinary
+ * decorated toplevel — but it has to paint the card colour, not the
+ * system theme's window background, which on a dark desktop framed the
+ * light editor body in near-black. Both selectors for the same reason
+ * window.ingot-panel-window needs both: GTK adds .background itself. */
+window.ingot-editor-window,
+window.ingot-editor-window.background {
+  background-color: var(--card-bg);
+}
+
+/* The editor's titlebar. internal/ui/editorwindow/window.go:67 never
+ * calls SetTitlebar, so GTK builds a default CSD headerbar and Adwaita
+ * paints it — the rule above only reaches the window's own background
+ * node, leaving a themed bar sitting on top of an Ingot-coloured body.
+ * Both selectors because GTK marks the CSD bar .titlebar while the widget
+ * underneath is a headerbar. */
+window.ingot-editor-window headerbar,
+window.ingot-editor-window .titlebar {
+  background-color: var(--card-bg);
+  background-image: none;
+  color: var(--ink);
+  box-shadow: none;
+  border-bottom: 1px solid var(--rule);
+}
+
+/* The close button inside that titlebar. GTK nests the paintable node two
+ * deep (windowcontrols > button > image), and the rule above only reaches
+ * the bar itself, so the button kept Adwaita's own hover and active fills
+ * — a themed square flashing under the pointer on an Ingot-coloured bar.
+ * Colour only: the control's size and glyph stay GTK's. */
+window.ingot-editor-window windowcontrols button {
+  background-image: none;
+  background-color: transparent;
+  box-shadow: none;
+  color: var(--ink);
+}
+
+window.ingot-editor-window windowcontrols button:hover,
+window.ingot-editor-window windowcontrols button:hover > image {
+  background-color: var(--overlay-hover);
+}
+
+window.ingot-editor-window windowcontrols button:active,
+window.ingot-editor-window windowcontrols button:active > image {
+  background-color: var(--overlay-active);
+}
+
+/* The dark HUD's layer-shell GtkWindow (internal/ui/toast/hud.go:58).
+ * Its surface is a plain rectangle behind a 17dp-radius toast, so GTK's
+ * .background fill showed as a grey square at the corners — the same leak
+ * window.ingot-panel-window fixes for the panel. */
+window.ingot-toast-window,
+window.ingot-toast-window.background {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
+/* The context and overflow menus (internal/ui/menus/popup.go). A
+ * GtkPopoverMenu's fill lives on its "contents" child, and its "arrow" is
+ * a third node that must match or the pointer reads as a differently
+ * coloured notch. Unstyled, both took Adwaita's popup colours, so a menu
+ * opened from the light panel came up dark. */
+popover.menu > contents {
+  background-color: var(--menu-bg);
+  color: var(--ink);
+  border-radius: calc(var(--card-radius) * 1px);
+  box-shadow: var(--drag-shadow);
+  /* Adwaita puts `border: 1px solid rgba(0,0,0,.75)` here, a near-black
+   * hairline that reads as a hard outline around a light menu. Ingot's
+   * menu is separated from what is behind it by --drag-shadow instead. */
+  border: none;
+}
+
+/* The arrow is live: internal/ui/menus/popup.go:176 (the overflow menu)
+ * never calls SetHasArrow(false), unlike the context menu at popup.go:66.
+ * Adwaita gives it its own `box-shadow: 0 1px 2px rgba(0,0,0,.3)`, which
+ * draws a dark smudge under a notch that is supposed to read as part of
+ * the menu's own contents. */
+popover.menu > arrow {
+  background-color: var(--menu-bg);
+  border: none;
+  box-shadow: none;
+}
+
+/* Menu items. GtkPopoverMenu builds each one as a GtkModelButton, which
+ * Ingot never touches directly, and the submenu chevron is an "arrow"
+ * node inside it. */
+modelbutton.flat {
+  background-image: none;
+  background-color: transparent;
+  color: var(--ink);
+}
+
+/* :selected is the keyboard-navigation highlight, not a pointer state, so
+ * it is reached by arrowing through a menu rather than by hovering. Left
+ * uncovered it kept Adwaita's blue fill with white text, which is the one
+ * Adwaita colour a keyboard user would still hit in an otherwise
+ * Ingot-coloured menu. --ink is redeclared because Adwaita sets the
+ * foreground here too, not just the fill. */
+modelbutton.flat:hover,
+modelbutton.flat:selected {
+  background-color: var(--overlay-hover);
+  color: var(--ink);
+}
+
+/* Disabled items are real, not theoretical: Actions keeps Merge disabled
+ * below two selected rows and Expand disabled on an untruncated row
+ * (internal/app/menus.go:197). Adwaita's own #919190 is a light grey that
+ * disappears on a light menu. --ink-muted at half opacity keeps the
+ * disabled item legible while still clearly ranking below an enabled one,
+ * which plain --ink-muted (already the arrow's colour) would not. */
+modelbutton.flat:disabled {
+  color: var(--ink-muted);
+  opacity: 0.5;
+}
+
+modelbutton.flat arrow {
+  color: var(--ink-muted);
+}
+
+/* The "New Section..." entry embedded in the Move to submenu
+ * (internal/app/menus.go:171). It is a real GtkEntry inside the popover,
+ * so it kept Adwaita's entry fill and text colour while the menu around
+ * it was already restyled. */
+popover.menu entry {
+  background-image: none;
+  background-color: var(--field-bg);
+  color: var(--ink);
+  /* Only the colour, not the border itself: Adwaita's #1b1b1b hairline is
+   * a near-black box around a light field. Its min-height (32px) is left
+   * alone on purpose — resizing this entry is a design change, not a
+   * colour-scheme fix. */
+  border-color: var(--rule);
+}
+
+popover.menu entry > text {
+  background-color: transparent;
+  color: var(--ink);
+  caret-color: var(--ink);
+}
+
+/* opacity as well as colour: Adwaita dims a placeholder to .55 on top of
+ * whatever colour it carries, so setting --ink-muted alone still lands at
+ * 55% of it, fainter than every other muted string in the panel. */
+popover.menu entry placeholder {
+  color: var(--ink-muted);
+  opacity: 1;
+}
+
+popover.menu entry selection {
+  background-color: var(--selection-bg);
+  color: var(--ink);
+}
+
+/* The panel's two GtkScrolledWindows: the composer's
+ * (internal/ui/composer/composer.go:90) and the note list's
+ * (internal/ui/notelist/list.go:182). Neither carries a class, and both
+ * inherit a theme background plus the overshoot/undershoot/junction edge
+ * effects, which draw a themed band over the panel surface at the ends of
+ * a scroll. */
+.ingot-panel scrolledwindow {
+  background: none;
+}
+
+.ingot-panel scrolledwindow > overshoot,
+.ingot-panel scrolledwindow > undershoot,
+.ingot-panel scrolledwindow > junction {
+  background: none;
+  background-image: none;
+  border: none;
+  box-shadow: none;
+}
+
+/* GTK's OWN overlay scrollbar, which is a different widget from the note
+ * list's. internal/ui/notelist builds its bar explicitly and gives it
+ * .ingot-scrollbar, but the composer
+ * (internal/ui/composer/composer.go:92) asks for PolicyAutomatic with
+ * overlay scrolling left on, so GTK constructs a scrollbar node of its
+ * own inside the scrolled window. It carries no Ingot class, so nothing
+ * under .ingot-scrollbar reaches it and Adwaita painted its slider and
+ * both of its interaction states. Matched to the notelist's treatment
+ * here so the two bars cannot look like different widgets. */
+.ingot-panel scrolledwindow scrollbar {
+  background: none;
+  border: none;
+}
+
+.ingot-panel scrolledwindow scrollbar trough {
+  background: none;
+  border: none;
+}
+
+.ingot-panel scrolledwindow scrollbar slider {
+  background-color: var(--scrollbar-ink);
+  border: none;
+  border-radius: calc(var(--scrollbar-w) * 1px);
+  min-width: calc(var(--scrollbar-w) * 1px);
+}
+
+.ingot-panel scrolledwindow scrollbar slider:hover,
+.ingot-panel scrolledwindow scrollbar slider:active {
+  background-color: var(--ink-muted);
+}
+
+/* The search-no-matches "Clear search" button
+ * (internal/ui/panel/emptystate.go:83). Its resting state is already flat
+ * above, but both pointer states fell straight back to Adwaita's button
+ * fill. */
+.search-empty-clear:hover,
+.search-empty-clear:active {
+  background: none;
+  background-image: none;
+  box-shadow: none;
+  border: none;
+}
+
+.search-empty-clear:hover {
+  background-color: var(--overlay-hover);
+}
+
+.search-empty-clear:active {
+  background-color: var(--overlay-active);
+}
+
+/* Pre-emptive, not a fix for an observed leak: nothing in internal/ calls
+ * SetTooltipText or SetTooltipMarkup today, so no tooltip is ever shown.
+ * A tooltip is a window of its own, so nothing in the panel's tree would
+ * reach it — the first widget to gain a tooltip would otherwise show it
+ * in the system theme's colours beside an Ingot-coloured panel. */
+tooltip.background {
+  background-color: var(--panel-bg);
+  color: var(--ink);
+  /* Adwaita outlines a tooltip as well as filling it, so fill and colour
+   * alone would still leave a system-theme hairline around an
+   * Ingot-coloured box. Pre-emptive for the same reason as the rest of
+   * this rule — no tooltip exists yet to observe it on. */
+  border: 1px solid var(--rule);
 }

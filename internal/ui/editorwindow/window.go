@@ -67,6 +67,10 @@ func newWindow(note Note, onSave func(id, text string), onClosed func(id string)
 	win := gtk.NewWindow()
 	win.SetTitle(note.Title)
 	win.SetDefaultSize(theme.EditorWidth, theme.EditorHeight)
+	// Without this the window keeps the system theme's own background,
+	// which on a dark desktop frames the light editor body in near-black.
+	// theme's stylesheet hangs the card fill on this class.
+	win.AddCSSClass(theme.EditorWindowClass)
 	win.SetChild(view)
 
 	keyCtrl := gtk.NewEventControllerKey()

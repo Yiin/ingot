@@ -100,6 +100,12 @@ func TestScreenshot_CapturesTheAssembledPanel(t *testing.T) {
 	panelToast.Show("Copied 3 items to clipboard")
 
 	win := gtk.NewWindow()
+	// internal/app puts this class on the window it maps (app.go:224), and
+	// it is what clears GTK's opaque window background. Without it here,
+	// this test maps a different window than the real app does and would
+	// capture a panel whose rounded corners are filled in by the theme —
+	// hiding exactly the window-background leak the class exists to fix.
+	win.AddCSSClass(theme.PanelWindowClass)
 	win.SetChild(s.Widget())
 
 	p, err := layershell.New(win, layershell.DefaultConfig(), nil)

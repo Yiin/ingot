@@ -130,11 +130,21 @@ func (c *Checkbox) progress() (fill, tick float64) {
 func (c *Checkbox) draw(_ *gtk.DrawingArea, cr *cairo.Context, width, height int) {
 	fill, tick := c.progress()
 
+	// Read at draw time, not cached: theme.Colors() returns whichever
+	// palette is active now, and the whole widget is redrawn when the
+	// scheme changes (see theme's repaintAllToplevels).
+	//
+	// This cannot become a CSS colour read on the widget instead. One
+	// frame cross-fades the ring and the fill against each other by
+	// alpha, so it needs both colours at once, which a single resolved
+	// style colour cannot give it.
+	colors := theme.Colors()
+
 	cx, cy := float64(width)/2, float64(height)/2
 	radius := (float64(theme.CheckSize) - theme.CheckStroke) / 2
 
 	if fill < 1 {
-		rr, rg, rb := hexRGB(theme.CheckRing)
+		rr, rg, rb := theme.ParseRGB(colors.CheckRing)
 		cr.NewPath()
 		cr.Arc(cx, cy, radius, 0, 2*math.Pi)
 		cr.SetLineWidth(theme.CheckStroke)
@@ -143,7 +153,7 @@ func (c *Checkbox) draw(_ *gtk.DrawingArea, cr *cairo.Context, width, height int
 	}
 
 	if fill > 0 {
-		ar, ag, ab := hexRGB(theme.Accent)
+		ar, ag, ab := theme.ParseRGB(colors.Accent)
 		cr.NewPath()
 		cr.Arc(cx, cy, radius, 0, 2*math.Pi)
 		cr.SetSourceRGBA(ar, ag, ab, fill)
@@ -180,6 +190,8 @@ func drawTick(cr *cairo.Context, cx, cy, radius, reveal float64) {
 	cr.SetLineWidth(theme.CheckStroke)
 	cr.SetLineCap(cairo.LineCapRound)
 	cr.SetLineJoin(cairo.LineJoinRound)
+	// White in both schemes, deliberately: the tick is only ever drawn on
+	// top of the accent fill, which is a saturated blue either way.
 	cr.SetSourceRGB(1, 1, 1)
 	cr.Stroke()
 }

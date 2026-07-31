@@ -33,7 +33,7 @@ func writeHighlighted(b *strings.Builder, source []byte, start, stop int, ranges
 		if clipStart > pos {
 			b.WriteString(escapeText(string(source[pos:clipStart])))
 		}
-		b.WriteString(`<span background="` + HighlightBackground + `">`)
+		b.WriteString(`<span background="` + HighlightBackground() + `">`)
 		b.WriteString(escapeText(string(source[clipStart:clipEnd])))
 		b.WriteString("</span>")
 		pos = clipEnd

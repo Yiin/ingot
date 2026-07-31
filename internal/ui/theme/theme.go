@@ -15,9 +15,29 @@ import (
 // the window and the stylesheet cannot drift apart.
 const PanelWindowClass = "ingot-panel-window"
 
-// Load registers the bundled Inter Variable font and installs the panel
-// stylesheet on display at application priority, so every widget created
-// afterwards picks it up.
+// EditorWindowClass is the CSS class the note editor's GtkWindow must
+// carry so the stylesheet can paint it the panel's card colour. Without
+// it the window keeps the system theme's own window background, which on
+// a dark desktop is near-black behind a light editor body. Same
+// name-beside-the-rule reasoning as PanelWindowClass above.
+const EditorWindowClass = "ingot-editor-window"
+
+// ToastWindowClass is the CSS class the dark HUD's layer-shell GtkWindow
+// must carry so the stylesheet can clear its background. The HUD's
+// surface is a plain rectangle behind a 17dp-radius toast, so GTK's
+// .background fill shows at the corners exactly the way it did on the
+// panel window before PanelWindowClass existed.
+const ToastWindowClass = "ingot-toast-window"
+
+// Load registers the bundled Inter Variable font, installs the panel
+// stylesheet on display at application priority so every widget created
+// afterwards picks it up, then detects the desktop's colour scheme and
+// applies it.
+//
+// Scheme detection lives here rather than in internal/app because
+// internal/ui/panel/screenshot_integration_test.go calls Load directly:
+// anything the app does to make the panel render correctly has to happen
+// inside Load, or the screenshot stops being a capture of the real thing.
 //
 // Call this once, right after gtk.Init(), before building any widget —
 // gtkapp.Run (copper-l2z.16) is responsible for that ordering.
@@ -39,6 +59,8 @@ func Load(display *gdk.Display) error {
 	// that is the signal this package's tests assert on instead.
 	provider.LoadFromString(CSS)
 	gtk.StyleContextAddProviderForDisplay(display, provider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+	apply(display, detectScheme())
 
 	return nil
 }

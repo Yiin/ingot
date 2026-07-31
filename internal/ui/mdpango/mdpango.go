@@ -12,6 +12,8 @@ import (
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/text"
+
+	"github.com/Yiin/ingot/internal/ui/theme"
 )
 
 var mdParser = goldmark.DefaultParser()
@@ -31,7 +33,19 @@ func Collapsed(body string) string {
 
 // HighlightBackground is the Pango background attribute value a search
 // match's highlight span uses (internal/ui/search, copper-l2z.28).
-const HighlightBackground = "#0A6CFF1F"
+//
+// It is a function rather than a constant so it follows the active colour
+// scheme: the light accent at 12% is barely visible on the dark card, and
+// a constant left every search match tinted light-blue in dark mode. GTK
+// thread only, like every other theme.Colors caller.
+//
+// Known limitation, deliberately not plumbed around: the value is baked
+// into the markup string at render time, so flipping the colour scheme
+// while search results are on screen leaves those spans in the old tint
+// until something re-renders them (a keystroke in the query, a rebind).
+// One stale highlight is not worth a re-render path through
+// internal/ui/search.
+func HighlightBackground() string { return theme.Colors().HighlightBg }
 
 // FullHighlighted renders body like Full, additionally wrapping every
 // raw-body byte range in ranges (each a [start, end) pair in the same

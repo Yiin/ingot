@@ -91,7 +91,9 @@ func displayTitle(title string) string { return strings.ToUpper(title) }
 func (h *sectionHeader) drawRule(_ *gtk.DrawingArea, cr *cairo.Context, width, height int) {
 	baseline := float64(h.label.Layout().Baseline()) / pango.SCALE
 	y := capMidY(baseline)
-	rr, rg, rb, ra := parseRGBA(theme.Rule)
+	// Read at draw time so a colour-scheme change repaints in the new
+	// palette — see theme.Colors.
+	rr, rg, rb, ra := theme.ParseRGBA(theme.Colors().Rule)
 
 	cr.NewPath()
 	cr.MoveTo(0, y)
