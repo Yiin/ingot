@@ -98,6 +98,21 @@
   --font-family: "Inter Variable", "Adwaita Sans", "Cantarell", sans-serif;
 }
 
+/* The layer-shell window must paint nothing at all. GTK gives every
+ * GtkWindow an opaque background from the theme, and the surface is
+ * exactly the panel's size, so that square shows through at the four
+ * corners .ingot-panel rounds off — the panel reads as a rectangle with
+ * dark corners rather than a rounded card. Clearing it here lets the
+ * compositor's alpha through, which is what makes the rounding real.
+ * Both selectors are needed: GTK adds .background to the window itself,
+ * and its style takes precedence over a bare `window` rule. */
+window.ingot-panel-window,
+window.ingot-panel-window.background {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
 /* The panel: opaque, no backdrop-filter — see the header comment above. */
 .ingot-panel {
   background-color: var(--panel-bg);

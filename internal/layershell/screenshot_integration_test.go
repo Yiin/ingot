@@ -74,6 +74,7 @@ func TestScreenshot_MapsAndCapturesANonUniformImage(t *testing.T) {
 	}
 
 	win := gtk.NewWindow()
+	t.Cleanup(win.Destroy)
 	win.SetChild(gtk.NewLabel("Ingot"))
 
 	p, err := New(win, DefaultConfig(), nil)

@@ -65,6 +65,7 @@ func TestNew_RejectsAnUnsupportedCompositor(t *testing.T) {
 	}
 
 	win := gtk.NewWindow()
+	t.Cleanup(win.Destroy)
 	if _, err := New(win, DefaultConfig(), nil); err == nil {
 		t.Fatal("New returned a nil error against a compositor with no wlr-layer-shell support")
 	}
@@ -75,6 +76,7 @@ func TestNew_SetsSizeBeforeFirstShow(t *testing.T) {
 	requireLayerShell(t)
 
 	win := gtk.NewWindow()
+	t.Cleanup(win.Destroy)
 	cfg := DefaultConfig()
 	if _, err := New(win, cfg, nil); err != nil {
 		t.Fatalf("New: %v", err)
@@ -98,6 +100,7 @@ func TestNew_DefaultsAZeroHeightFraction(t *testing.T) {
 	requireLayerShell(t)
 
 	win := gtk.NewWindow()
+	t.Cleanup(win.Destroy)
 	cfg := Config{Namespace: "ingot-panel-test", MarginEdge: 12, Width: 360, MaxHeight: 640}
 	if _, err := New(win, cfg, nil); err != nil {
 		t.Fatalf("New: %v", err)
@@ -113,6 +116,7 @@ func TestShowHide_TogglesVisibility(t *testing.T) {
 	requireLayerShell(t)
 
 	win := gtk.NewWindow()
+	t.Cleanup(win.Destroy)
 	p, err := New(win, DefaultConfig(), nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -146,6 +150,7 @@ func TestFocusReturnsToPreviousToplevelOnHide(t *testing.T) {
 	requireLayerShell(t)
 
 	sink := gtk.NewWindow()
+	t.Cleanup(sink.Destroy)
 	sink.SetTitle("layershell-test-sink")
 	sink.SetVisible(true)
 	pumpUntil(5*time.Second, sink.IsActive)
@@ -155,6 +160,7 @@ func TestFocusReturnsToPreviousToplevelOnHide(t *testing.T) {
 	}
 
 	win := gtk.NewWindow()
+	t.Cleanup(win.Destroy)
 	p, err := New(win, DefaultConfig(), nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -176,6 +182,7 @@ func TestSetMonitorByConnector_UnknownNameReturnsAnError(t *testing.T) {
 	requireLayerShell(t)
 
 	win := gtk.NewWindow()
+	t.Cleanup(win.Destroy)
 	p, err := New(win, DefaultConfig(), nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -204,6 +211,7 @@ func TestSetMonitorByConnector_MatchesAnAttachedMonitor(t *testing.T) {
 	}
 
 	win := gtk.NewWindow()
+	t.Cleanup(win.Destroy)
 	p, err := New(win, DefaultConfig(), nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)

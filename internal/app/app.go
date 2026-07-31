@@ -212,6 +212,11 @@ func (a *App) startup() error {
 	win := gtk.NewApplicationWindow(a.gapp.Application)
 	win.SetChild(a.shell.Widget())
 	win.SetDecorated(false)
+	// GTK paints every window an opaque theme colour. Under layer-shell
+	// the surface is exactly the panel's size, so that rectangle shows
+	// through at the four corners .ingot-panel rounds off. This class is
+	// what theme's stylesheet hangs a transparent background on.
+	win.AddCSSClass(theme.PanelWindowClass)
 	a.win = win
 
 	lsPanel, err := layershell.New(&win.Window, layershell.DefaultConfig(), nil)
