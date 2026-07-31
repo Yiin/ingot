@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+# archlinux:latest, not GoReleaser: GoReleaser's whole value is
+# cross-compilation, which cgo (gotk4, gtk4-layer-shell) takes away — this
+# only ever builds one binary, for the platform it's linked against. Same
+# container choice as ci.yml, for the same reason: ubuntu-latest's own GTK
+# is too old and lacks a gtk4-layer-shell package.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: pacman -Sy --noconfirm --needed base-devel git go gtk4 gtk4-layer-shell pkgconf github-cli
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version and GTK4 version
+        id: vars
+        run: |
+          echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          echo "gtk_version=$(pkg-config --modversion gtk4)" >> "$GITHUB_OUTPUT"
+
+      - name: make release
+        run: make release VERSION=${{ steps.vars.outputs.version }}
+
+      - name: Checksum
+        working-directory: dist
+        run: sha256sum ingot > sha256sums.txt
+
+      - name: Verify version string
+        run: test "$(./dist/ingot version)" = "${{ steps.vars.outputs.version }}"
+
+      - name: Write release notes
+        env:
+          GTK_VERSION: ${{ steps.vars.outputs.gtk_version }}
+        run: |
+          cat > release-notes.md <<EOF
+          Built against GTK4 ${GTK_VERSION} (minimum required to run this binary).
+
+          The binary in this release was built on Arch Linux and suits Arch and
+          Fedora, which carry a recent-enough GTK4 and gtk4-layer-shell. Other
+          distributions should build from source with \`make release\`.
+
+          No Flatpak is planned: Hyprland, sway, and niri all block
+          wlr-layer-shell and both data-control protocols for sandboxed
+          (Flatpak) clients, which rules out the panel and the clipboard.
+          EOF
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.vars.outputs.version }}" \
+            dist/ingot dist/sha256sums.txt \
+            --title "${{ steps.vars.outputs.version }}" \
+            --notes-file release-notes.md
