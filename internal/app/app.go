@@ -72,6 +72,13 @@ type App struct {
 	// its own syncNavToList's SelectItems call — see nav.go.
 	syncingNavToList bool
 	keepOnTop        bool
+	// started guards the activate handler: GApplication fires activate once
+	// during Run, and startup has already decided whether the panel begins
+	// visible, so only a later activate (a re-launch) should present it.
+	started bool
+	// releaseHold drops the GApplication hold taken in startup. Ingot must
+	// outlive its hidden panel so the capture chord stays armed.
+	releaseHold func()
 	// keyOverrides is config.toml's [keys] section, narrowed by
 	// applyKeyOverrides to just the entries keymap.ApplyOverrides
 	// accepted — see menus.go.
@@ -101,15 +108,6 @@ func Run(opts Options) int {
 		slog.Warn("ingot: config.toml: " + w)
 	}
 
-	sentRemote, err := gtkapp.ToggleRemote(context.Background(), AppID, "toggle")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "ingot: run:", err)
-		return 1
-	}
-	if sentRemote {
-		return 0
-	}
-
 	panelState := config.LoadPanelState(fsx.OS(), layout)
 
 	a := &App{
@@ -120,8 +118,24 @@ func Run(opts Options) int {
 		keepOnTop: panelState.KeepOnTop,
 	}
 
+	// Build the real App first and probe the bus through it. Registering a
+	// separate throwaway GApplication under the same id would export the
+	// org.gtk.Application object at this id's path, and the real one could
+	// then never export there — no primary instance could start at all.
 	a.gapp = gtkapp.New(AppID)
+
 	a.gapp.AddAction("toggle", func() { a.toggle() })
+
+	// GApplication requires an activate handler or Run warns and returns
+	// straight away. Startup already decided whether the panel begins
+	// visible, so the first activate must not fight that; only a later one
+	// (a re-launch from the desktop file) presents the panel.
+	a.gapp.OnActivate(func(*gtkapp.App) {
+		if a.started {
+			a.show()
+		}
+		a.started = true
+	})
 	a.gapp.OnStartup(func(*gtkapp.App) {
 		if err := a.startup(); err != nil {
 			fmt.Fprintln(os.Stderr, "ingot: run:", err)
@@ -129,6 +143,21 @@ func Run(opts Options) int {
 		}
 	})
 	a.gapp.ConnectShutdown(func() { a.shutdown() })
+
+	// Register only now, with every handler already connected.
+	// g_application_register emits "startup" synchronously the moment this
+	// process becomes the primary instance, so registering any earlier
+	// would fire it before OnStartup is attached: the panel would never be
+	// built, nothing would hold the application open, and Run would return
+	// 0 immediately having done nothing.
+	sentRemote, err := a.gapp.TryActivateRemote(context.Background(), "toggle")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ingot: run:", err)
+		return 1
+	}
+	if sentRemote {
+		return 0
+	}
 
 	return a.gapp.Run()
 }
@@ -205,6 +234,12 @@ func (a *App) startup() error {
 	})
 
 	a.startChord()
+
+	// Outlive the panel. GApplication quits once its last visible window
+	// goes away, so without this hold, hiding the panel would end the
+	// process and disarm the capture chord — the exact state Ingot is
+	// meant to sit in most of the time. shutdown drops it.
+	a.releaseHold = a.gapp.KeepAlive()
 
 	sigCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	a.stopSignals = stopSignals

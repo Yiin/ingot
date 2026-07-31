@@ -43,6 +43,11 @@ func (a *App) shutdown() {
 		if a.stopSignals != nil {
 			a.stopSignals()
 		}
+		// Drop the keep-alive before Quit, or the hold taken in startup
+		// keeps the main loop running after the quit request.
+		if a.releaseHold != nil {
+			a.releaseHold()
+		}
 		if a.gapp != nil {
 			a.gapp.Quit()
 		}

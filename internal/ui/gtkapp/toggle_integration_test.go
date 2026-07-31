@@ -70,11 +70,11 @@ func TestToggleRemoteHelperProcess(t *testing.T) {
 	}
 	appID := os.Getenv("GTKAPP_TEST_APPID")
 
-	sentRemote, err := ToggleRemote(context.Background(), appID, "toggle")
+	sentRemote, err := New(appID).TryActivateRemote(context.Background(), "toggle")
 	if err != nil {
-		t.Fatalf("ToggleRemote: %v", err)
+		t.Fatalf("TryActivateRemote: %v", err)
 	}
 	if !sentRemote {
-		t.Fatal("ToggleRemote reported sentRemote=false, want true: a primary instance should already be running")
+		t.Fatal("TryActivateRemote reported sentRemote=false, want true: a primary instance should already be running")
 	}
 }

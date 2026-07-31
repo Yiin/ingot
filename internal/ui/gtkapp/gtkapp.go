@@ -27,6 +27,7 @@ package gtkapp
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
@@ -56,6 +57,34 @@ func (a *App) OnStartup(fn func(*App)) {
 	a.ConnectStartup(func() {
 		a.safeCall(func() { fn(a) })
 	})
+}
+
+// OnActivate registers fn to run on GApplication's "activate" signal: once
+// during Run, and again every time a second ingot invocation calls
+// [App.TryActivateRemote] with no action name, or the desktop file is
+// launched again.
+//
+// Connecting activate is not optional. A GApplication with no activate
+// handler makes g_application_run warn "Your application does not implement
+// g_application_activate()" and return immediately, so the process exits
+// before the panel is ever usable. A panic inside fn is recovered.
+func (a *App) OnActivate(fn func(*App)) {
+	a.ConnectActivate(func() {
+		a.safeCall(func() { fn(a) })
+	})
+}
+
+// KeepAlive holds the application open independently of its windows, and
+// returns a function that drops the hold.
+//
+// Ingot needs this because its whole point is to sit idle with the panel
+// hidden while the global Shift-Shift chord stays armed. GApplication exits
+// once its last visible window goes away, so without a hold, hiding the
+// panel would quit the process and disarm capture.
+func (a *App) KeepAlive() (release func()) {
+	a.Hold()
+	var once sync.Once
+	return func() { once.Do(a.Release) }
 }
 
 // AddAction registers a named, parameterless action (e.g. "toggle") that
@@ -106,34 +135,38 @@ func (a *App) safeCall(fn func()) {
 // main context to flush the ActivateAction D-Bus call before returning.
 const mainContextFlushBudget = 100 * time.Millisecond
 
-// ToggleRemote checks whether appID already has a running primary instance
-// and, if so, activates actionName on it and reports sentRemote=true so the
-// caller knows to exit without ever building its own App or window. If
-// sentRemote is false, this process is the primary instance and the caller
-// should proceed to build its App via New and call Run as normal.
+// TryActivateRemote registers THIS App on the session bus and, if another
+// instance already owns the application id, activates actionName on it and
+// reports sentRemote=true so the caller knows to exit without building a
+// window. If sentRemote is false, this process is the primary instance and
+// the caller should carry on wiring actions and call Run as normal.
+//
+// Register the real App, never a throwaway one. g_application_register
+// exports an org.gtk.Application object at the object path derived from the
+// application id, and a second GApplication carrying the same id cannot
+// export at that same path — it fails with "An object is already exported
+// for the interface org.gtk.Application at /...", which makes starting a
+// primary instance impossible. Registering here is safe and idempotent:
+// g_application_run calls g_application_register itself and treats an
+// already-registered application as a no-op, and actions added after
+// registration are still exported, because GApplication keeps its exported
+// action group in sync.
 //
 // ctx must not be nil: gotk4 v0.4.0's core/gcancel panics converting a nil
 // context. A nil ctx is replaced with context.Background().
-//
-// GApplication bus-name ownership is scoped to the shared per-process D-Bus
-// session connection, not to the *Application object that acquired it, so
-// the throwaway Application built here and the real one built later via New
-// both correctly see themselves as primary on first launch — there is no
-// race to win between them.
-func ToggleRemote(ctx context.Context, appID, actionName string) (sentRemote bool, err error) {
+func (a *App) TryActivateRemote(ctx context.Context, actionName string) (sentRemote bool, err error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	app := gio.NewApplication(appID, gio.ApplicationFlagsNone)
-	if err := app.Register(ctx); err != nil {
+	if err := a.Register(ctx); err != nil {
 		return false, err
 	}
-	if !app.IsRemote() {
+	if !a.IsRemote() {
 		return false, nil
 	}
 
-	app.ActivateAction(actionName, nil)
+	a.ActivateAction(actionName, nil)
 
 	// ActivateAction queues an async D-Bus call; without pumping the
 	// context, the process can exit before the call is ever written to the
