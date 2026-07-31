@@ -58,7 +58,8 @@ type Composer struct {
 
 	project string
 
-	onCommit func(text string)
+	onCommit        func(text string)
+	onHeightChanged func(height int)
 
 	currentHeight int
 	tickID        uint
@@ -138,6 +139,12 @@ func (c *Composer) Focus() { c.view.GrabFocus() }
 // composer commits (plain Enter or Ctrl+Enter).
 func (c *Composer) OnCommit(f func(text string)) { c.onCommit = f }
 
+// OnHeightChanged registers f to be called with the composer's current
+// card height every time it changes (including mid-animation, every
+// tick) — the panel (copper-l2z.26) uses this to keep the in-panel
+// toast's bottom inset tracking the composer as it grows.
+func (c *Composer) OnHeightChanged(f func(height int)) { c.onHeightChanged = f }
+
 func (c *Composer) handleTextChanged() {
 	empty := c.buffer.CharCount() == 0
 	c.placeholder.SetVisible(empty)
@@ -181,6 +188,9 @@ func (c *Composer) animateHeightTo(target int) {
 func (c *Composer) setContentHeight(h int) {
 	c.currentHeight = h
 	c.scroll.SetMinContentHeight(h)
+	if c.onHeightChanged != nil {
+		c.onHeightChanged(h)
+	}
 }
 
 // installKeyHandling wires Return/KP_Enter/ISO_Enter. It needs the

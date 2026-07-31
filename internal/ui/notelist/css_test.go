@@ -28,6 +28,25 @@ func TestInsertAnimDurationMatchesCSS(t *testing.T) {
 	}
 }
 
+// TestDuplicateFlashDurationMatchesCSS keeps theme.DuplicateFlashDuration
+// (FlashDuplicate's own removal timer) in sync with style.css's
+// animation-length, the same guard TestInsertAnimDurationMatchesCSS gives
+// the just-inserted class.
+func TestDuplicateFlashDurationMatchesCSS(t *testing.T) {
+	re := regexp.MustCompile(`\.note-card\.duplicate-flash\s*\{[^}]*animation:\s*ingot-duplicate-flash\s+(\d+)ms`)
+	m := re.FindStringSubmatch(theme.CSS)
+	if m == nil {
+		t.Fatalf("style.css has no `.note-card.duplicate-flash { animation: ingot-duplicate-flash <N>ms ... }` rule")
+	}
+	ms, err := strconv.Atoi(m[1])
+	if err != nil {
+		t.Fatalf("parsing animation duration %q: %v", m[1], err)
+	}
+	if ms != theme.DuplicateFlashDuration {
+		t.Errorf("style.css's ingot-duplicate-flash duration = %dms, want %dms (theme.DuplicateFlashDuration)", ms, theme.DuplicateFlashDuration)
+	}
+}
+
 // TestNoteCardHasNoUnconditionalAnimation guards the exact bug the child
 // spec warns about: an animation declared directly on .note-card (rather
 // than gated by .just-inserted) would replay on every recycled bind, so

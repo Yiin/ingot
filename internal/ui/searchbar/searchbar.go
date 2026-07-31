@@ -88,6 +88,12 @@ func (s *SearchBar) OverflowButton() *gtk.MenuButton { return s.overflow }
 // Focus grabs keyboard focus into the search entry.
 func (s *SearchBar) Focus() { s.entry.GrabFocus() }
 
+// Clear empties the query, e.g. for the panel's "no matches" empty
+// state's Clear search button (copper-l2z.26). It fires the same
+// ConnectChanged path a user clearing the field by hand would, so
+// OnQueryChanged still runs.
+func (s *SearchBar) Clear() { s.entry.SetText("") }
+
 // OnQueryChanged registers f to be called with the current query text
 // every time it changes.
 func (s *SearchBar) OnQueryChanged(f func(query string)) { s.onQueryChanged = f }
