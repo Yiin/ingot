@@ -84,16 +84,17 @@ const (
 	gsShortcutEventReleased uint16 = 1
 )
 
-// gsShortcutSlot identifies one of the four chord edges this client
-// registers, so an incoming event can be mapped back to (side, edge)
-// by object id alone, with no string parsing on the hot path.
+// gsShortcutSlot identifies one of the two Shift sides this client
+// registers, so an incoming event can be mapped back to a side by
+// object id alone, with no string parsing on the hot path. Each slot's
+// object receives both the pressed and released event of a physical tap
+// (see hyprland.go's hyprlandNames doc for why one object per side is
+// both sufficient and required, not one per press/release edge).
 type gsShortcutSlot int
 
 const (
-	gsSlotLDown gsShortcutSlot = iota
-	gsSlotLUp
-	gsSlotRDown
-	gsSlotRUp
+	gsSlotL gsShortcutSlot = iota
+	gsSlotR
 )
 
 // gsShortcutDef pairs one slot with the object id this client assigns
@@ -110,10 +111,8 @@ type gsShortcutDef struct {
 
 func gsShortcutDefs() []gsShortcutDef {
 	return []gsShortcutDef{
-		{objectID: 5, id: hyprlandNames.lDown, description: "Ingot: left Shift pressed", slot: gsSlotLDown},
-		{objectID: 6, id: hyprlandNames.lUp, description: "Ingot: left Shift released", slot: gsSlotLUp},
-		{objectID: 7, id: hyprlandNames.rDown, description: "Ingot: right Shift pressed", slot: gsSlotRDown},
-		{objectID: 8, id: hyprlandNames.rUp, description: "Ingot: right Shift released", slot: gsSlotRUp},
+		{objectID: 5, id: hyprlandNames.l, description: "Ingot: left Shift", slot: gsSlotL},
+		{objectID: 6, id: hyprlandNames.r, description: "Ingot: right Shift", slot: gsSlotR},
 	}
 }
 
@@ -153,7 +152,7 @@ func dialWaylandSocket(ctx context.Context) (net.Conn, error) {
 
 // globalShortcutsClient owns one persistent connection to the Wayland
 // compositor: it binds hyprland_global_shortcuts_manager_v1, registers
-// the four chord shortcuts, and delivers their pressed/released
+// the two chord shortcuts, and delivers their pressed/released
 // events to onEvent from a dedicated read goroutine until Close.
 type globalShortcutsClient struct {
 	conn net.Conn
