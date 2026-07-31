@@ -23,6 +23,8 @@ import (
 	"github.com/Yiin/ingot/internal/store/fsx"
 	"github.com/Yiin/ingot/internal/store/paths"
 	"github.com/Yiin/ingot/internal/ui/gtkapp"
+	"github.com/Yiin/ingot/internal/ui/keymap"
+	"github.com/Yiin/ingot/internal/ui/menus"
 	"github.com/Yiin/ingot/internal/ui/panel"
 	"github.com/Yiin/ingot/internal/ui/theme"
 	"github.com/Yiin/ingot/internal/ui/toast"
@@ -63,6 +65,18 @@ type App struct {
 	gateCancel  context.CancelFunc
 	stopSignals context.CancelFunc
 
+	menuActions *menus.Actions
+	ctxMenu     *menus.ContextMenuController
+	nav         *keymap.Nav
+	// syncingNavToList guards onListSelectionChanged against reacting to
+	// its own syncNavToList's SelectItems call — see nav.go.
+	syncingNavToList bool
+	keepOnTop        bool
+	// keyOverrides is config.toml's [keys] section, narrowed by
+	// applyKeyOverrides to just the entries keymap.ApplyOverrides
+	// accepted — see menus.go.
+	keyOverrides map[string]string
+
 	hidden  bool
 	visible bool
 
@@ -96,7 +110,15 @@ func Run(opts Options) int {
 		return 0
 	}
 
-	a := &App{layout: layout, cfg: cfg, hidden: opts.Hidden, detector: hotkey.NewDetector(cfg.Hotkey.Window)}
+	panelState := config.LoadPanelState(fsx.OS(), layout)
+
+	a := &App{
+		layout:    layout,
+		cfg:       cfg,
+		hidden:    opts.Hidden,
+		detector:  hotkey.NewDetector(cfg.Hotkey.Window),
+		keepOnTop: panelState.KeepOnTop,
+	}
 
 	a.gapp = gtkapp.New(AppID)
 	a.gapp.AddAction("toggle", func() { a.toggle() })
@@ -115,6 +137,11 @@ func Run(opts Options) int {
 // thread, inside gtkapp's OnStartup callback — see gtkapp's own doc
 // comment on init order.
 func (a *App) startup() error {
+	// Must run before any wire* call below reads keymap.Table (directly,
+	// via bindTableAction, or through Resolve inside InstallNav) — see
+	// applyKeyOverrides' own doc comment.
+	a.applyKeyOverrides()
+
 	if err := theme.Load(gdk.DisplayGetDefault()); err != nil {
 		slog.Warn("app: theme.Load failed, styling degraded", "err", err)
 	}
@@ -168,6 +195,8 @@ func (a *App) startup() error {
 	a.wireCopyShortcuts()
 	a.wireListGate()
 	a.wireListToggle()
+	a.wireMenus()
+	a.wireNav()
 
 	win.ConnectCloseRequest(func() bool {
 		defer guard("close-request")()

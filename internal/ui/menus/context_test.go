@@ -134,7 +134,7 @@ func TestBuildMoveToSubmenuStructure(t *testing.T) {
 		t.Fatalf("new-section group has %d items, want 1", n)
 	}
 	custom := newSection.ItemAttributeValue(0, "custom", glib.NewVariantType("s"))
-	if custom == nil || custom.String() != newSectionCustomID {
-		t.Errorf("New Section item custom attribute = %v, want %q", custom, newSectionCustomID)
+	if custom == nil || custom.String() != NewSectionCustomID {
+		t.Errorf("New Section item custom attribute = %v, want %q", custom, NewSectionCustomID)
 	}
 }

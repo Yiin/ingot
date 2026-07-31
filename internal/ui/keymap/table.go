@@ -1,5 +1,11 @@
 package keymap
 
+import (
+	"sort"
+
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+)
+
 // Scope limits where a binding is active.
 type Scope uint8
 
@@ -171,4 +177,78 @@ func ByAction(action string) (Entry, bool) {
 		}
 	}
 	return Entry{}, false
+}
+
+// ApplyOverrides replaces the Accels of Table entries named in
+// overrides (action -> a single accelerator string, config.toml's
+// [keys] section) with that one accelerator, one override at a time —
+// each is kept only if it parses as a real gtk.AcceleratorParse
+// accelerator, names an action whose Scope isn't ScopeGlobal (a global
+// binding is evdev/hotkey-driven, never a GTK accelerator, so there is
+// nothing for a "GTK accelerator override" to change — accepting one
+// would only corrupt the generated shortcuts window with a chip that
+// names no real binding), and does not collide with another binding
+// already active in the same scope: Resolve's own index build assumes
+// Table never collides within a scope (see
+// TestNoAccelCollisionsWithinScope), so letting a colliding override
+// through would panic on the very next keypress. An override naming an
+// action Table has no entry for is silently skipped — that's
+// config.Load-vs-keymap.ByAction's job to warn about, not this
+// function's.
+//
+// Overrides are applied in sorted-by-action order for a deterministic
+// outcome when two user overrides collide with each other (the first,
+// alphabetically, wins; the second is rejected as a collision) — map
+// iteration order is otherwise randomized per Go's own spec, which
+// would make that outcome flip from run to run.
+//
+// Call once, at startup, before Resolve or NewShortcutsWindow read
+// Table: both are generated from it fresh on every call, so an override
+// applied later would still take effect, just not retroactively for
+// whatever already ran.
+//
+// Returns the rejected subset as action -> reason; every override not
+// named here was applied.
+func ApplyOverrides(overrides map[string]string) map[string]string {
+	actions := make([]string, 0, len(overrides))
+	for action := range overrides {
+		actions = append(actions, action)
+	}
+	sort.Strings(actions)
+
+	rejected := make(map[string]string)
+	for _, action := range actions {
+		accel := overrides[action]
+		if accel == "" {
+			continue
+		}
+
+		i := -1
+		var scope Scope
+		for j, e := range Table {
+			if e.Action == action {
+				i, scope = j, e.Scope
+				break
+			}
+		}
+		if i < 0 {
+			continue
+		}
+		if scope == ScopeGlobal {
+			rejected[action] = "a global binding is not a GTK accelerator and cannot be overridden here"
+			continue
+		}
+		if _, _, ok := gtk.AcceleratorParse(accel); !ok {
+			rejected[action] = "not a valid accelerator"
+			continue
+		}
+
+		prev := Table[i].Accels
+		Table[i].Accels = []string{accel}
+		if _, err := index(scope); err != nil {
+			Table[i].Accels = prev
+			rejected[action] = err.Error()
+		}
+	}
+	return rejected
 }

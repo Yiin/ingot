@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -20,7 +21,9 @@ func TestLoad_MissingFileReturnsDefault(t *testing.T) {
 	if warnings != nil {
 		t.Errorf("warnings = %v, want nil", warnings)
 	}
-	if cfg != Default() {
+	// Keys is a map (Config.Keys), so Config is no longer comparable
+	// with ==; reflect.DeepEqual is the equivalent check.
+	if !reflect.DeepEqual(cfg, Default()) {
 		t.Errorf("cfg = %+v, want Default() = %+v", cfg, Default())
 	}
 }
@@ -46,6 +49,32 @@ theme = "light"
 	}
 	if cfg.PanelToggleBinding != "<Super>space" {
 		t.Errorf("PanelToggleBinding = %q, want %q", cfg.PanelToggleBinding, "<Super>space")
+	}
+}
+
+func TestLoad_KeysSectionOverrides(t *testing.T) {
+	fs := fsx.NewMem()
+	layout := paths.Layout{Config: "/config"}
+	writeFile(t, fs, "/config/config.toml", `theme = "light"
+
+[keys]
+mark-done = "<Control>space"
+quit = "<Control><Shift>q"
+`)
+
+	cfg, warnings, err := Load(fs, layout)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Errorf("warnings = %v, want none", warnings)
+	}
+	want := map[string]string{"mark-done": "<Control>space", "quit": "<Control><Shift>q"}
+	if !reflect.DeepEqual(cfg.Keys, want) {
+		t.Errorf("Keys = %v, want %v", cfg.Keys, want)
+	}
+	if cfg.Theme != "light" {
+		t.Errorf("Theme = %q, want %q (a top-level key before the section should still apply)", cfg.Theme, "light")
 	}
 }
 

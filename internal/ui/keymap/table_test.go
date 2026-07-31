@@ -126,3 +126,128 @@ func TestByAction(t *testing.T) {
 		t.Errorf("ByAction(\"no-such-action\") found something, want not found")
 	}
 }
+
+// TestApplyOverrides mutates the package-level Table, so it saves and
+// restores a deep-enough copy (Accels is the only field it ever writes)
+// around itself — every other test in this file (and package) reads
+// Table assuming it's still the real default.
+func TestApplyOverrides(t *testing.T) {
+	saved := make([][]string, len(Table))
+	for i, e := range Table {
+		saved[i] = e.Accels
+	}
+	t.Cleanup(func() {
+		for i, accels := range saved {
+			Table[i].Accels = accels
+		}
+	})
+
+	rejected := ApplyOverrides(map[string]string{
+		"mark-done":      "<Control>space",
+		"no-such-action": "<Control>x",  // must be silently ignored, not rejected: not Table's job to warn
+		"quit":           "",            // empty value must be ignored, not clear Accels
+		"global-capture": "<Control>g",  // ScopeGlobal: no GTK accelerator to override, must reject
+		"toggle-panel":   "not-a-chord", // bad syntax, must reject regardless of scope
+		"focus-next":     "Up",          // collides with focus-previous's own "Up" within ScopeList, must reject
+	})
+
+	got, ok := ByAction("mark-done")
+	if !ok {
+		t.Fatal("ByAction(\"mark-done\") not found after ApplyOverrides")
+	}
+	if len(got.Accels) != 1 || got.Accels[0] != "<Control>space" {
+		t.Errorf("mark-done Accels = %v, want [\"<Control>space\"]", got.Accels)
+	}
+	if _, rejected := rejected["mark-done"]; rejected {
+		t.Error("mark-done was rejected, want accepted (valid, non-colliding, ScopeList)")
+	}
+
+	quit, ok := ByAction("quit")
+	if !ok {
+		t.Fatal("ByAction(\"quit\") not found")
+	}
+	if len(quit.Accels) != 1 || quit.Accels[0] != "<Control>q" {
+		t.Errorf("quit Accels = %v, want unchanged [\"<Control>q\"] (empty override should be a no-op)", quit.Accels)
+	}
+
+	for _, action := range []string{"global-capture", "toggle-panel", "focus-next"} {
+		if _, ok := rejected[action]; !ok {
+			t.Errorf("action %q: not in the rejected map, want rejected", action)
+		}
+	}
+
+	// Rejection must leave Table's own entry exactly as it was — this is
+	// the crash-prevention property: Resolve's index build (called by
+	// InstallNav on every keypress) assumes Table never collides within
+	// a scope, so a rejected override reaching Table anyway would panic
+	// on the very next keypress.
+	if e, _ := ByAction("global-capture"); len(e.Accels) != 0 {
+		t.Errorf("global-capture Accels = %v, want unchanged (empty)", e.Accels)
+	}
+	if e, _ := ByAction("toggle-panel"); len(e.Accels) != 1 || e.Accels[0] != "<Super><Shift>c" {
+		t.Errorf("toggle-panel Accels = %v, want unchanged", e.Accels)
+	}
+	if e, _ := ByAction("focus-next"); len(e.Accels) != 1 || e.Accels[0] != "Down" {
+		t.Errorf("focus-next Accels = %v, want unchanged [\"Down\"]", e.Accels)
+	}
+
+	// index(ScopeList) must still build cleanly after all of the above —
+	// the actual property Resolve depends on every keypress.
+	if _, err := index(ScopeList); err != nil {
+		t.Errorf("index(ScopeList) after ApplyOverrides: %v, want no error", err)
+	}
+
+	// Every entry other than mark-done is untouched.
+	for i, e := range Table {
+		if e.Action == "mark-done" {
+			continue
+		}
+		want := saved[i]
+		if len(e.Accels) != len(want) {
+			t.Errorf("action %q: Accels = %v, want unchanged %v", e.Action, e.Accels, want)
+			continue
+		}
+		for j := range want {
+			if e.Accels[j] != want[j] {
+				t.Errorf("action %q: Accels = %v, want unchanged %v", e.Action, e.Accels, want)
+				break
+			}
+		}
+	}
+}
+
+// TestApplyOverridesDeterministicOnMutualCollision checks that when two
+// overrides collide with each other, the outcome is deterministic
+// (alphabetically-first action wins) rather than depending on Go's
+// randomized map iteration order.
+func TestApplyOverridesDeterministicOnMutualCollision(t *testing.T) {
+	saved := make([][]string, len(Table))
+	for i, e := range Table {
+		saved[i] = e.Accels
+	}
+	t.Cleanup(func() {
+		for i, accels := range saved {
+			Table[i].Accels = accels
+		}
+	})
+
+	for i := 0; i < 5; i++ {
+		for i, accels := range saved {
+			Table[i].Accels = accels
+		}
+
+		// Both ask for the same physical chord within ScopeList;
+		// "first-note" sorts before "last-note".
+		rejected := ApplyOverrides(map[string]string{
+			"last-note":  "<Control><Shift>x",
+			"first-note": "<Control><Shift>x",
+		})
+
+		if _, ok := rejected["first-note"]; ok {
+			t.Fatalf("iteration %d: first-note (alphabetically first) was rejected, want accepted", i)
+		}
+		if _, ok := rejected["last-note"]; !ok {
+			t.Fatalf("iteration %d: last-note was accepted, want rejected as a collision with first-note", i)
+		}
+	}
+}

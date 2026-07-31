@@ -287,3 +287,42 @@ func (n *Nav) SelectAllInSection() {
 func (n *Nav) ClearSelection() {
 	n.sel = make(map[string]bool)
 }
+
+// SyncFocus moves focus and the anchor to id without touching the
+// current selection — for keeping Nav's own row-order state aligned
+// with a selection change driven outside Nav (the real widget's own
+// default mouse-click handling, which this package's key controller
+// deliberately leaves alone — see InstallNav's doc comment), so a
+// following keyboard move continues from the row the mouse actually
+// last touched instead of wherever Nav's keyboard focus happened to be.
+// A no-op if id is not present in the current row order.
+func (n *Nav) SyncFocus(id string) {
+	i := n.indexOf(id)
+	if i < 0 {
+		return
+	}
+	n.focus = i
+	n.anchor = i
+}
+
+// SyncSelection replaces the current selection with ids (any id not
+// present in the current row order is silently dropped, same as
+// SetRows already does for a selection that outlives its row) and, if
+// ids is non-empty, syncs focus to the last one via SyncFocus — the
+// selection counterpart to SyncFocus, for the same externally-driven-
+// change reason: without this, Nav's own selection map only ever
+// reflects what Nav itself last computed, so a mouse click — real
+// selection changes, Nav's map does not — leaves Nav's very next
+// keyboard-driven extend/select-all operating on a stale base set
+// instead of what's actually selected on screen.
+func (n *Nav) SyncSelection(ids []string) {
+	n.sel = make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if n.indexOf(id) >= 0 {
+			n.sel[id] = true
+		}
+	}
+	if len(ids) > 0 {
+		n.SyncFocus(ids[len(ids)-1])
+	}
+}

@@ -24,6 +24,14 @@ type storeAdapter struct {
 	model  *notelist.Model
 	notify func(msg string)
 
+	// onProjectsChanged, onActiveTitleChanged and onRowsChanged are set
+	// by wireMenus/wireNav after construction, once a.menuActions and
+	// a.nav exist — nil-safe so Seed and OnEvent work unchanged before
+	// that wiring runs.
+	onProjectsChanged    func()
+	onActiveTitleChanged func(title string)
+	onRowsChanged        func()
+
 	activeIdx int
 	items     map[string][]*notelist.Item // section id -> its notes, store order
 	byID      map[string]*notelist.Item
@@ -54,10 +62,16 @@ func (a *storeAdapter) OnEvent(ev store.Event) {
 	switch e := ev.(type) {
 	case store.NotesSpliced:
 		a.onSpliced(e)
+		a.notifyRowsChanged()
 	case store.NoteUpdated:
 		a.onUpdated(e)
-	case store.ActiveProjectChanged, store.ProjectListChanged, store.SectionsChanged, store.ProjectReloaded:
+	case store.ActiveProjectChanged, store.SectionsChanged, store.ProjectReloaded:
 		a.rebuild()
+	case store.ProjectListChanged:
+		a.rebuild()
+		if a.onProjectsChanged != nil {
+			a.onProjectsChanged()
+		}
 	case store.ConflictResolved:
 		a.rebuild()
 		a.notify("Reloaded from disk — your version saved to " + filepath.Base(e.SavedTo))
@@ -65,6 +79,12 @@ func (a *storeAdapter) OnEvent(ev store.Event) {
 		a.notify("Couldn't save — will keep retrying")
 	case store.ProjectReadOnly:
 		a.notify("This project can't be saved (file has unexpected content)")
+	}
+}
+
+func (a *storeAdapter) notifyRowsChanged() {
+	if a.onRowsChanged != nil {
+		a.onRowsChanged()
 	}
 }
 
@@ -87,18 +107,29 @@ func (a *storeAdapter) activeProjectIndex() int {
 // every event that can change section shape or swap the active project.
 func (a *storeAdapter) rebuild() {
 	a.activeIdx = a.activeProjectIndex()
-	a.items = make(map[string][]*notelist.Item)
-	a.byID = make(map[string]*notelist.Item)
 
 	if a.activeIdx < 0 {
+		a.items = make(map[string][]*notelist.Item)
+		a.byID = make(map[string]*notelist.Item)
 		a.model.SetSections(nil)
 		a.model.Reset(nil)
+		a.notifyRowsChanged()
 		return
 	}
 
 	proj, err := a.store.Project(a.store.Active())
 	if err != nil {
+		// Leave items/byID/the model exactly as they were: a.model
+		// still shows whatever was last successfully loaded, so byID
+		// must keep agreeing with it — clearing either here, ahead of
+		// a Project lookup that just failed, would desync the two and
+		// break every itemForNote lookup for rows still on screen.
 		return
+	}
+	a.items = make(map[string][]*notelist.Item)
+	a.byID = make(map[string]*notelist.Item)
+	if a.onActiveTitleChanged != nil {
+		a.onActiveTitleChanged(proj.Title)
 	}
 
 	a.model.SetSections(storeSectionsToNotelist(proj.Sections))
@@ -116,6 +147,7 @@ func (a *storeAdapter) rebuild() {
 		a.items[secID] = secItems
 	}
 	a.model.Reset(all)
+	a.notifyRowsChanged()
 }
 
 // onSpliced applies one NotesSpliced event: a contiguous

@@ -36,10 +36,16 @@ func Load(fsys fsx.FS, layout paths.Layout) (Config, []string, error) {
 	}
 
 	var warnings []string
+	section := ""
 	for i, line := range strings.Split(string(raw), "\n") {
 		lineNo := i + 1
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		if name, ok := sectionHeader(line); ok {
+			section = name
 			continue
 		}
 
@@ -50,6 +56,11 @@ func Load(fsys fsx.FS, layout paths.Layout) (Config, []string, error) {
 		}
 		key = strings.TrimSpace(key)
 		value = unquote(strings.TrimSpace(value))
+
+		if section == "keys" {
+			cfg.Keys[key] = value
+			continue
+		}
 
 		switch key {
 		case "hotkey_window":
@@ -69,6 +80,18 @@ func Load(fsys fsx.FS, layout paths.Layout) (Config, []string, error) {
 	}
 
 	return cfg, warnings, nil
+}
+
+// sectionHeader reports whether line is a TOML-style "[name]" section
+// header, and if so, name. Only "[keys]" means anything to Load today;
+// a key = value line under any other section falls through to the
+// top-level switch below and is reported as an unknown key, the same as
+// it would be with no section at all.
+func sectionHeader(line string) (name string, ok bool) {
+	if len(line) < 2 || line[0] != '[' || line[len(line)-1] != ']' {
+		return "", false
+	}
+	return strings.TrimSpace(line[1 : len(line)-1]), true
 }
 
 // unquote strips one layer of matching double quotes, so both

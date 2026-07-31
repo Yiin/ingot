@@ -39,6 +39,14 @@ type Config struct {
 	// field exists so a future dark theme has somewhere to plug in
 	// without another config.toml schema change.
 	Theme string
+	// Keys holds per-action accelerator overrides from config.toml's
+	// [keys] section, keyed by keymap.Entry.Action (e.g. "mark-done" =
+	// "<Control>space"). Validating each key against keymap.ByAction
+	// happens in internal/app, not here: keymap lives under internal/ui
+	// and pulls in cgo, and this package stays free of that so it keeps
+	// building and testing without a display, the same as every other
+	// internal/store-adjacent package.
+	Keys map[string]string
 }
 
 // Default returns Config as it is before any config.toml is read.
@@ -47,5 +55,6 @@ func Default() Config {
 		Hotkey:             DefaultHotkey(),
 		PanelToggleBinding: DefaultPanelToggleBinding,
 		Theme:              "light",
+		Keys:               map[string]string{},
 	}
 }

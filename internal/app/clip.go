@@ -15,21 +15,30 @@ import (
 // as primaryReadTimeout.
 const clipboardWriteTimeout = 3 * time.Second
 
-// wireCopyShortcuts installs Copy, Copy as List, Copy as List and Mark
-// Done, Hide Panel, and Quit as app-wide accelerators. All of these use
-// modifier-bearing accelerators, so — unlike mark-done's bare Space,
-// wired separately via keymap.InstallListGate (see keys.go) — none of
-// them can shadow ordinary typing in the composer or search field.
+// wireCopyShortcuts installs "Copy as List, and Mark Done" and Quit as
+// app-wide accelerators. Both use modifier-bearing accelerators, so —
+// unlike mark-done's own bare Space, wired separately via
+// keymap.InstallListGate (see keys.go) — neither can shadow ordinary
+// typing in the composer or search field.
+//
+// Copy and Copy as List themselves are not bound here: menus.Register
+// (wireMenus, which runs after this) installs both as "app.copy" and
+// "app.copy-as-list" via Handlers.Copy/CopyAsList (implemented in
+// menus.go as a.copySelection(false, false) and a.copySelection(true,
+// false)) — registering them a second time under the same name here
+// would collide. Likewise Close/hide-panel: menus' "close" action
+// already claims Ctrl+W via Handlers.Close, so this package has only one
+// name for it, not two.
 func (a *App) wireCopyShortcuts() {
-	a.bindAction("copy", []string{"<Control>c"}, func() { a.copySelection(false, false) })
-	a.bindAction("copy-as-list", []string{"<Control><Shift>c"}, func() { a.copySelection(true, false) })
 	// "Do not copy that behaviour [Copy as List auto-marking notes
 	// done]; offer Copy as List and Mark Done as a separate action
 	// instead" — the child spec's own words. A copy alone never
-	// mutates; this is the separate, explicit action.
+	// mutates; this is the separate, explicit action. Not a
+	// keymap.Table action (it's an Ingot-specific extra beyond the base
+	// spec), so — unlike "quit" below — its accelerator isn't
+	// overridable via config.toml's [keys] section.
 	a.bindAction("copy-as-list-and-done", []string{"<Control><Alt><Shift>c"}, func() { a.copySelection(true, true) })
-	a.bindAction("hide-panel", []string{"<Control>w"}, func() { a.hide() })
-	a.bindAction("quit", []string{"<Control>q"}, func() { a.shutdown() })
+	a.bindTableAction("quit", func() { a.shutdown() })
 }
 
 // bindAction registers a named, parameterless action via gtkapp.App

@@ -64,3 +64,51 @@ func (a *App) deleteSelected() {
 	}
 	a.shell.RefreshEmptyState("", 0)
 }
+
+// wireExtraShortcuts installs four of keymap.Table's ScopeApp entries
+// that have no menus.Handlers counterpart: focus-composer and undo
+// (redo has no binding at all — store.Store keeps a single undo slot,
+// not a stack, so there is nothing for a "redo" to reverse), and
+// next-project/previous-project, which cycle store.Projects() order
+// rather than jumping to one by id the way menus' own Ctrl+1..9
+// (SetProjectAccels) does. Not exhaustive: focus-search (already wired
+// independently, inside searchbar's own installShortcuts) and
+// clear-done (deliberately left with no accelerator at all — see
+// menus.Accels' own omission and its reasoning) are Table entries too,
+// just not this function's concern.
+func (a *App) wireExtraShortcuts() {
+	a.bindTableAction("focus-composer", func() { a.shell.Composer().Focus() })
+	a.bindTableAction("undo", func() {
+		if err := a.store.Undo(); err != nil {
+			slog.Warn("app: undo", "err", err)
+		}
+	})
+	a.bindTableAction("next-project", func() { a.cycleProject(1) })
+	a.bindTableAction("previous-project", func() { a.cycleProject(-1) })
+}
+
+// cycleProject switches the active project delta positions forward (1)
+// or back (-1) through store.Projects() order, wrapping around either
+// end. A no-op if there are no projects (should not happen: startup
+// seeds one) or the active project is somehow not among them.
+func (a *App) cycleProject(delta int) {
+	refs := a.store.Projects()
+	if len(refs) == 0 {
+		return
+	}
+	active := a.store.Active()
+	idx := -1
+	for i, p := range refs {
+		if p.ID == active {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return
+	}
+	next := (idx + delta + len(refs)) % len(refs)
+	if err := a.store.SetActive(refs[next].ID); err != nil {
+		slog.Warn("app: cycle project", "err", err)
+	}
+}

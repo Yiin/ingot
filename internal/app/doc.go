@@ -30,18 +30,26 @@
 //
 // # Scope note
 //
-// This package wires the seven flows the child spec names (capture,
-// compose, copy, toggle, store-to-list-model, lock gating, lifecycle)
-// plus the CLI's run/path/export/import commands and the no-permission
-// degradation path. It deliberately does not wire internal/ui/menus'
-// context/overflow menus, internal/ui/keymap's Nav-driven list
-// navigation and project switcher, or internal/ui/searchbar's query
-// into any actual filtering — those are real, separate scope (the last
-// one is explicitly copper-l2z.28's own child), tracked as follow-ups
-// (see the epic notes for this child). Space (mark done) and BackSpace
-// (delete) on the list are wired directly via keymap.InstallListGate,
-// since that primitive exists specifically to avoid stealing those keys
-// from a focused text field. A row's own checkbox click IS wired (via
-// List.ConnectToggled) — that's part of the store-to-list-model flow,
-// not menus/keymap/search scope.
+// This package wires the seven flows copper-l2z.30's own spec named
+// (capture, compose, copy, toggle, store-to-list-model, lock gating,
+// lifecycle) plus the CLI's run/path/export/import commands and the
+// no-permission degradation path. copper-l2z.61 added the rest:
+// internal/ui/menus' context/overflow menus and app-level actions
+// (menus.go), internal/ui/keymap's Nav-driven list navigation — focus
+// movement, jump-to-section, extend-selection, select-all-in-section —
+// and the project switcher (nav.go, keys.go), and config.toml's [keys]
+// per-action overrides plus panel.json's Keep on Top preference. Space
+// (mark done) and BackSpace (delete) on the list are still wired
+// directly via keymap.InstallListGate rather than through Nav or a menu
+// action, since that primitive exists specifically to avoid stealing
+// those keys from a focused text field.
+//
+// Still unwired, left for a future child: internal/ui/searchbar's query
+// into any actual filtering (that's copper-l2z.28's own child, and
+// unrelated to this package); keymap.HandleEscape/EscapeTarget's full
+// six-step Escape cascade (searchbar's own OnEscapeAtEmpty covers only
+// its own two steps today); a real note editor behind Edit/Edit in New
+// Window/Expand (all three are Handlers stubs — see menus.go); and
+// per-note reordering (move-note-up/move-note-down have Table entries
+// and no store primitive to back them).
 package app
