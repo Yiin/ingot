@@ -73,6 +73,12 @@ type Row struct {
 	strikeStart     int64
 	strikeElapsed   time.Duration
 	strikeTickID    uint
+
+	// applying is set while SetChecked is driving the checkbox
+	// programmatically, so checkboxToggled does not treat a recycled list
+	// item's reset-then-apply bind as a user click and replay the 200ms
+	// strike wipe on every recycle.
+	applying bool
 }
 
 // NewRow assembles one note card, initially idle and unchecked. A click
@@ -109,20 +115,56 @@ func NewRow() *Row {
 	strike.SetDrawFunc(r.drawStrike)
 	r.applyCSS()
 
-	checkbox.ConnectToggled(func(checked bool) {
-		r.SetDone(checked, true)
-	})
+	checkbox.ConnectToggled(r.checkboxToggled)
 
 	return r
 }
 
+// rowOwnedClasses are exactly the classes applyCSS ever adds or removes.
+var rowOwnedClasses = []string{"note-card", "selected", "selection-anchor", "done", "expanded", "dragging"}
+
+// applyCSS toggles each of rowOwnedClasses independently (AddCSSClass /
+// RemoveCSSClass), never via SetCSSClasses — a caller may have added a
+// class this package doesn't own (e.g. internal/ui/notelist's
+// "just-inserted" insert-animation class, on a Row it recycles across
+// list items), and SetCSSClasses replaces the widget's entire class
+// list, which would silently strip it on the next state repaint.
 func (r *Row) applyCSS() {
-	r.SetCSSClasses(r.state.cssClasses())
+	want := make(map[string]bool)
+	for _, c := range r.state.cssClasses() {
+		want[c] = true
+	}
+	for _, c := range rowOwnedClasses {
+		if want[c] {
+			r.AddCSSClass(c)
+		} else {
+			r.RemoveCSSClass(c)
+		}
+	}
 }
 
-// SetChecked sets both the checkbox and the row's done state together.
+// checkboxToggled mirrors the checkbox's state onto the row's own done
+// state, animated, for a real user click. It is registered once in
+// NewRow and does nothing while SetChecked is applying the state
+// programmatically (see applying).
+func (r *Row) checkboxToggled(checked bool) {
+	if r.applying {
+		return
+	}
+	r.SetDone(checked, true)
+}
+
+// SetChecked sets both the checkbox and the row's done state together,
+// without replaying this Row's own checkboxToggled handler — safe to
+// call on every bind of a recycled row. It does not suppress any other
+// subscriber registered via Checkbox.ConnectToggled: a caller that binds
+// its own toggle handler onto Row.Checkbox (as internal/ui/notelist
+// does) must guard that handler itself while applying a programmatic
+// state.
 func (r *Row) SetChecked(checked bool, animate bool) {
+	r.applying = true
 	r.Checkbox.SetChecked(checked, animate)
+	r.applying = false
 	r.SetDone(checked, animate)
 }
 

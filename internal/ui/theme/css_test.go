@@ -36,8 +36,9 @@ func TestStylesheetHasNoRejectedProperties(t *testing.T) {
 func TestStylesheetDefinesRequiredClasses(t *testing.T) {
 	required := []string{
 		".ingot-panel", ".note-card", ".note-card:hover", ".note-card.selected",
-		".note-card.done", ".section-header", ".section-rule", ".search-field",
-		".composer", ".toast-dark", ".toast-light",
+		".note-card.done", ".note-card.just-inserted", ".section-header",
+		".section-rule", ".search-field", ".composer", ".toast-dark",
+		".toast-light", ".ingot-notelist", ".note-placeholder", ".ingot-scrollbar",
 	}
 	for _, class := range required {
 		if !strings.Contains(theme.CSS, class) {
