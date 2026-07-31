@@ -2,7 +2,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty)
 LDFLAGS_RELEASE := -s -w -X github.com/Yiin/ingot/internal/buildinfo.version=$(VERSION)
 
-.PHONY: build run test test-integration vet fmt lint check release clean screenshot
+.PHONY: build run test test-integration vet fmt lint check release clean screenshot bench
 
 # No -trimpath here, unlike release: every distinct combination of build
 # flags forces a full cold rebuild of gotk4's ~160k lines of generated cgo
@@ -17,6 +17,12 @@ run:
 
 test:
 	go test ./...
+
+# BenchmarkSearch_3000Notes asserts its own 2ms budget via b.Fatalf, so
+# just running it is the enforcement — no separate threshold-parsing
+# step needed.
+bench:
+	go test -run=^$$ -bench=BenchmarkSearch_3000Notes ./internal/store/fsstore/...
 
 # Display- and Wayland-dependent tests are gated behind the integration
 # build tag and need a real (or headless) compositor to do anything but
@@ -54,6 +60,7 @@ check:
 	$(MAKE) vet
 	$(MAKE) build
 	$(MAKE) test
+	$(MAKE) bench
 	$(MAKE) lint
 
 # -trimpath and stripped/version-stamped ldflags are release-only: they

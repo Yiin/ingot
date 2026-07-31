@@ -38,6 +38,10 @@ type fileStore struct {
 	subs      []subEntry
 	nextSubID int
 
+	// searchCache holds each note's last-computed searchtext.Normalized
+	// body, keyed by NoteID — see search.go's normalizedForLocked.
+	searchCache map[store.NoteID]normCacheEntry
+
 	closed bool
 }
 

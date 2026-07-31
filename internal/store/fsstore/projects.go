@@ -146,6 +146,12 @@ func (s *fileStore) deleteProjectLocked(id store.ProjectID) ([]store.Event, erro
 		pe.maxTimer.Stop()
 	}
 
+	for _, sec := range pe.proj.Sections {
+		for _, n := range sec.Notes {
+			s.evictSearchCacheLocked(n.ID)
+		}
+	}
+
 	idx, _ := s.indexOfProject(id)
 	s.order = append(s.order[:idx], s.order[idx+1:]...)
 	delete(s.projects, id)
