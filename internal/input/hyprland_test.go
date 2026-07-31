@@ -108,7 +108,7 @@ func (s *fakeGlobalShortcutsServer) serve() {
 // handshake replays exactly what dialGlobalShortcuts expects: a single
 // wl_registry.global advertising hyprland_global_shortcuts_manager_v1 at
 // version 1, the sync callback's done event, then the bind request and
-// four register_shortcut requests read and discarded.
+// two register_shortcut requests read and discarded.
 func (s *fakeGlobalShortcutsServer) handshake(conn net.Conn) error {
 	var discard [24]byte // get_registry (12 bytes) + sync (12 bytes)
 	if _, err := io.ReadFull(conn, discard[:]); err != nil {
@@ -128,7 +128,7 @@ func (s *fakeGlobalShortcutsServer) handshake(conn net.Conn) error {
 		return err
 	}
 
-	for i := 0; i < 5; i++ { // bind + 4x register_shortcut
+	for i := 0; i < 3; i++ { // bind + 2x register_shortcut
 		if _, _, err := readGsMessage(conn); err != nil {
 			return err
 		}
@@ -238,7 +238,7 @@ func TestNewHyprlandSourceResolvesSocketPathsFromEnv(t *testing.T) {
 	_ = gs
 }
 
-func TestHyprlandSourceRegistersAllFourBinds(t *testing.T) {
+func TestHyprlandSourceRegistersBothBinds(t *testing.T) {
 	reqPath, wlPath := testSockets(t)
 	req := newFakeReqServer(t, reqPath)
 	gs := newFakeGlobalShortcutsServer(t, wlPath)
@@ -251,7 +251,7 @@ func TestHyprlandSourceRegistersAllFourBinds(t *testing.T) {
 
 	// registerBinds unconditionally unbinds before binding (the fix for
 	// hyprctl keyword bindn's non-idempotence), so construction sends
-	// the two unbind commands first, then the four bind commands.
+	// the two unbind commands first, then the two bind commands.
 	want := len(hyprlandUnbindCommands) + len(hyprlandBindCommands)
 	waitForCount(t, func() int { return len(req.commands()) }, want)
 	got := req.commands()
@@ -280,16 +280,89 @@ func TestHyprlandSourceEmitsPressAndReleaseEvents(t *testing.T) {
 	}
 	defer src.Close()
 
-	gs.sendShortcut(t, gsSlotLDown, true)
+	// Both edges of one physical tap arrive on the SAME slot's object —
+	// see the hyprlandNames doc in hyprland.go for why a tap is no
+	// longer split across a separate "_down"/"_up" object pair.
+	gs.sendShortcut(t, gsSlotL, true)
 	ev := mustRecvEvent(t, src)
 	if ev.Kind != KindShift || !ev.Pressed {
 		t.Errorf("got %+v, want a Shift press", ev)
 	}
 
-	gs.sendShortcut(t, gsSlotLUp, false)
+	gs.sendShortcut(t, gsSlotL, false)
 	ev = mustRecvEvent(t, src)
 	if ev.Kind != KindShift || ev.Pressed {
 		t.Errorf("got %+v, want a Shift release", ev)
+	}
+}
+
+// TestGsShortcutDefsOneObjectPerSide pins down the actual shape of
+// copper-l2z.74's fix at the source: exactly one registered shortcut
+// object per Shift side, bound by exactly one command. Without this
+// check, a regression back to a separate "_down"/"_up" object pair per
+// side would still compile and still pass a fake-driven "one event per
+// send" test like the one below, since such a fake only proves the
+// client doesn't duplicate an event it wasn't sent — the original bug
+// was Hyprland fanning both edges out to every registered object, which
+// this test catches at the registration count instead.
+func TestGsShortcutDefsOneObjectPerSide(t *testing.T) {
+	defs := gsShortcutDefs()
+	if len(defs) != 2 {
+		t.Fatalf("gsShortcutDefs() has %d entries, want exactly 2 (one per Shift side)", len(defs))
+	}
+	if len(hyprlandBindCommands) != 2 {
+		t.Fatalf("hyprlandBindCommands has %d entries, want exactly 2 (one bindn per Shift side)", len(hyprlandBindCommands))
+	}
+
+	seenSlots := map[gsShortcutSlot]bool{}
+	for _, def := range defs {
+		if seenSlots[def.slot] {
+			t.Fatalf("slot %v registered by more than one gsShortcutDef", def.slot)
+		}
+		seenSlots[def.slot] = true
+	}
+	if !seenSlots[gsSlotL] || !seenSlots[gsSlotR] {
+		t.Fatalf("gsShortcutDefs() = %+v, want exactly one gsSlotL and one gsSlotR entry", defs)
+	}
+}
+
+// TestHyprlandSourceTapProducesExactlyOnePressAndOneRelease is
+// copper-l2z.74's core regression test: before the fix, a physical tap
+// produced two Pressed and two Released events (one from each of a
+// bindn-bound and a bindrn-bound object), which reset
+// internal/hotkey.Detector's chord state machine on the duplicate press
+// and made double-Shift-tap detection non-functional. One shortcut
+// object per side must deliver exactly one of each per tap.
+func TestHyprlandSourceTapProducesExactlyOnePressAndOneRelease(t *testing.T) {
+	reqPath, wlPath := testSockets(t)
+	newFakeReqServer(t, reqPath)
+	gs := newFakeGlobalShortcutsServer(t, wlPath)
+
+	src, err := newHyprlandSource(reqPath, dialUnix, gs.dial, nil)
+	if err != nil {
+		t.Fatalf("newHyprlandSource: %v", err)
+	}
+	defer src.Close()
+
+	gs.sendShortcut(t, gsSlotL, true)
+	press := mustRecvEvent(t, src)
+	if press.Kind != KindShift || !press.Pressed {
+		t.Fatalf("got %+v, want a single Shift press", press)
+	}
+
+	gs.sendShortcut(t, gsSlotL, false)
+	release := mustRecvEvent(t, src)
+	if release.Kind != KindShift || release.Pressed {
+		t.Fatalf("got %+v, want a single Shift release", release)
+	}
+
+	select {
+	case ev, ok := <-src.Events():
+		if ok {
+			t.Fatalf("got unexpected extra event %+v after one press+release tap", ev)
+		}
+	case <-time.After(100 * time.Millisecond):
+		// No extra event queued, as expected.
 	}
 }
 
@@ -305,7 +378,7 @@ func TestHyprlandSourceIgnoresUnrelatedEvents(t *testing.T) {
 	defer src.Close()
 
 	gs.sendUnrelated(t)
-	gs.sendShortcut(t, gsSlotRDown, true)
+	gs.sendShortcut(t, gsSlotR, true)
 
 	ev := mustRecvEvent(t, src)
 	if ev.Kind != KindShift || !ev.Pressed || ev.Code == 0 {
@@ -364,7 +437,7 @@ func TestHyprlandSourcePauseStopsEventsResumeRestartsThem(t *testing.T) {
 	afterResume := afterPause + len(hyprlandUnbindCommands) + len(hyprlandBindCommands)
 	waitForCount(t, func() int { return len(req.commands()) }, afterResume)
 
-	gs.sendShortcut(t, gsSlotLDown, true)
+	gs.sendShortcut(t, gsSlotL, true)
 	ev := mustRecvEvent(t, hs)
 	if ev.Kind != KindShift || !ev.Pressed {
 		t.Errorf("got %+v after Resume, want a Shift press", ev)
