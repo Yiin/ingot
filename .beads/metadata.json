@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "yiin",
+  "project_id": "f547e2cd-a17c-41ee-8eeb-0dc32695b271"
+}
