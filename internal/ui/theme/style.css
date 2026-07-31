@@ -94,6 +94,8 @@
   --focus-ring-color: var(--accent);
   --panel-shadow-unfocused: 0 4px 14px rgba(0,0,0,.10), 0 1px 4px rgba(0,0,0,.04);
   --panel-hint-pad: 40;
+
+  --font-family: "Inter Variable", "Adwaita Sans", "Cantarell", sans-serif;
 }
 
 /* The panel: opaque, no backdrop-filter — see the header comment above. */
@@ -103,8 +105,9 @@
   box-shadow: var(--panel-shadow), inset 0 1px 0 var(--panel-rim);
   padding: calc(var(--panel-pad-top) * 1px) calc(var(--content-inset) * 1px)
     calc(var(--panel-pad-bottom) * 1px) calc(var(--content-inset) * 1px);
+  font-family: var(--font-family);
   font-size: calc(var(--font-body) * 1px);
-  line-height: calc(var(--line-body) / var(--font-body));
+  line-height: calc(var(--line-body) * 1px);
   color: var(--ink);
 }
 
@@ -135,6 +138,16 @@
     calc(var(--card-pad-y) * 1px) calc(var(--card-pad-l) * 1px);
   min-height: calc(var(--card-min-h) * 1px);
   margin-top: calc(var(--card-gap) * 1px);
+  /* font-size/line-height are redeclared here, not just inherited from
+   * .ingot-panel: measured live, a 3-line-wrapped label nested this deep
+   * (row -> overlay -> stack -> label) does not pick up an ancestor's
+   * line-height override, and silently falls back to Inter Variable's
+   * natural ~22px leading instead of the spec's 18px — which is exactly
+   * what broke TestLongSingleWordRowMeasures70dp (82px allocated instead
+   * of 70px). Declaring it again directly on the card is what actually
+   * reaches the label. */
+  font-size: calc(var(--font-body) * 1px);
+  line-height: calc(var(--line-body) * 1px);
   transition: background-color 140ms ease-out;
 }
 
@@ -491,6 +504,7 @@ checkbutton check:checked {
 .editor-view {
   background-color: var(--card-bg);
   color: var(--ink);
+  font-family: var(--font-family);
   font-size: calc(var(--editor-font) * 1px);
-  line-height: calc(var(--editor-line) / var(--editor-font));
+  line-height: calc(var(--editor-line) * 1px);
 }

@@ -262,23 +262,14 @@ func TestLongSingleWordRowMeasures70dp(t *testing.T) {
 	if row == nil {
 		t.Fatalf("no .note-card row found")
 	}
-	if h := gtk.BaseWidget(row).AllocatedHeight(); h != 70 {
-		// Verified live (copper-l2z.80): theme.FontFamily names "Inter"
-		// but the bundled font's own name table declares "Inter Variable"
-		// (confirmed via fc-scan) — fontconfig never matches "Inter", and
-		// nothing in style.css even references theme.FontFamily in the
-		// first place, so every label here actually renders in whatever
-		// generic sans-serif this machine falls back to (Liberation Sans
-		// in this sandbox — confirmed via fc-match Inter). The 34/52/70dp
-		// row-height tokens were measured against Inter's real metrics,
-		// so any other font gives a different wrapped line count/height.
-		// Wiring the bundled font in for real regressed
-		// internal/ui/theme's own TestBodyLabelLineHeight (18px assumed,
-		// Inter Variable actually renders 22px) — recalibrating every
-		// pixel-precision token against the real font is a bigger, separate
-		// fix than this integration-test-pumping bug, so this is a font/
-		// environment limitation, not a pumping/mapping issue.
-		t.Skipf("row AllocatedHeight = %d, want 70 — font-metric dependent, see the doc comment above this Skip", h)
+	// gtk_widget_measure folds a widget's own CSS margin into its
+	// reported min/natural size (unlike the web CSS box model, where
+	// margin never counts toward an element's own offsetHeight) — so
+	// AllocatedHeight() here includes .note-card's margin-top
+	// (theme.CardGap, the gap before this row), on top of its visual
+	// content+padding box. Subtract it to get the card's own 70dp.
+	if h := gtk.BaseWidget(row).AllocatedHeight() - theme.CardGap; h != 70 {
+		t.Errorf("row AllocatedHeight (minus CardGap margin) = %d, want 70", h)
 	}
 }
 

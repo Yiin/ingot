@@ -150,13 +150,26 @@ func TestSelectedRowLabelColorMatchesInk(t *testing.T) {
 		t.Fatal("row did not report itself selected after SelectRow")
 	}
 
-	var want gdk.RGBA
+	// gdk.RGBA wraps a cgo-allocated pointer (gextras.StructNative), so a
+	// bare `var want gdk.RGBA` leaves that pointer nil and Parse segfaults
+	// dereferencing it — construct through gdk.NewRGBA to get a real
+	// allocation first.
+	want := gdk.NewRGBA(0, 0, 0, 1)
 	if !want.Parse(theme.Ink) {
 		t.Fatalf("gdk.RGBA.Parse(%q) failed", theme.Ink)
 	}
 
 	got := label.StyleContext().Color()
-	if !got.Equal(&want) {
+	// Not gdk.RGBA.Equal: gotk4 v0.4.0's binding dereferences the native
+	// pointer one level too many (StructNative already returns the
+	// *C.GdkRGBA, but Equal casts it to *gconstpointer and dereferences
+	// again), reading the struct's own red/green float bytes as if they
+	// were a pointer and segfaulting inside gdk_rgba_equal. The plain
+	// field accessors below go through the struct directly and don't
+	// have this bug.
+	equal := got.Red() == want.Red() && got.Green() == want.Green() &&
+		got.Blue() == want.Blue() && got.Alpha() == want.Alpha()
+	if !equal {
 		t.Errorf("selected note label color = %s, want %s (--ink)", got.String(), want.String())
 	}
 }

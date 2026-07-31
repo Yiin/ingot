@@ -168,8 +168,14 @@ const PanelHintPad = 40
 
 // Font stack, closest metric match to SF Pro Text for cap height, x-height
 // and leading. Inline bold is weight 600 (SF's bold-in-text), not 700.
+//
+// The bundled font's own name table declares its family as "Inter
+// Variable", not "Inter" (confirmed via fc-scan) — fontconfig matches
+// only on the declared name, so the stack must lead with the real name
+// or registerBundledFont's registration is silently unused and every
+// label falls through to a generic sans-serif.
 const (
-	FontFamily       = `"Inter", "Adwaita Sans", "Cantarell", sans-serif`
+	FontFamily       = `"Inter Variable", "Adwaita Sans", "Cantarell", sans-serif`
 	InlineBoldWeight = 600
 )
 

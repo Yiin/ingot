@@ -66,3 +66,17 @@ func TestStylesheetDefinesRequiredClasses(t *testing.T) {
 		}
 	}
 }
+
+// TestFontFamilyIsWired guards against theme.FontFamily going dead again:
+// it was defined but never referenced by any font-family declaration,
+// so the bundled Inter Variable font was registered but never actually
+// used anywhere (see copper-doi).
+func TestFontFamilyIsWired(t *testing.T) {
+	if !strings.Contains(theme.CSS, "--font-family: "+theme.FontFamily+";") {
+		t.Errorf("style.css's --font-family does not match theme.FontFamily (%s)", theme.FontFamily)
+	}
+	fontFamilyDeclRE := regexp.MustCompile(`(?m)^\s*font-family:\s*var\(--font-family\);`)
+	if n := len(fontFamilyDeclRE.FindAllString(theme.CSS, -1)); n == 0 {
+		t.Error("style.css never declares `font-family: var(--font-family)` anywhere")
+	}
+}
