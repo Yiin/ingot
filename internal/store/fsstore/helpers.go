@@ -211,6 +211,79 @@ func (s *fileStore) removeNoteLocsLocked(locs []noteLoc) []store.Event {
 	return events
 }
 
+// unregisterProjectLocked drops id from s.order/s.projects, stops its
+// debounce timers, clears any pending undo slot (it may reference a
+// section that no longer exists), and — if it was active — reassigns
+// Active to the next remaining project, persisting that choice. It says
+// nothing about the project's file on disk: DeleteProject and the
+// watcher's external-remove path each decide that for themselves, since
+// one needs to move the file to trash and the other's file is already
+// gone. Must be called with s.mu held.
+func (s *fileStore) unregisterProjectLocked(id store.ProjectID) []store.Event {
+	pe := s.projects[id]
+	if pe.idleTimer != nil {
+		pe.idleTimer.Stop()
+	}
+	if pe.maxTimer != nil {
+		pe.maxTimer.Stop()
+	}
+
+	idx, _ := s.indexOfProject(id)
+	s.order = append(s.order[:idx], s.order[idx+1:]...)
+	delete(s.projects, id)
+	s.clearUndoLocked()
+
+	events := []store.Event{store.ProjectListChanged{}}
+	if s.active == id {
+		if len(s.order) > 0 {
+			s.active = s.order[0]
+		} else {
+			s.active = ""
+		}
+		events = append(events, store.ActiveProjectChanged{})
+		if err := s.writeStateLocked(); err != nil {
+			events = append(events, store.SaveFailed{})
+		}
+	}
+	return events
+}
+
+// plural returns "" for n == 1 and "s" otherwise, for building undo
+// labels like "Undo Clear Done (1 note)" / "(4 notes)".
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// snapshotRemovedLocked captures every located note — its originating
+// project, section id and title, in-section index, and full value — in
+// ascending document order, before any mutation removes it. It is the
+// shared source data for a destructive operation's trash file (trash.go)
+// and its single-level undo slot (undo.go): document order guarantees
+// entries for the same section arrive in ascending index order, which is
+// exactly the order undoLocked needs to reinsert them without one
+// restored note's target index shifting out from under a
+// not-yet-restored sibling in the same section. Must be called with
+// s.mu held.
+func (s *fileStore) snapshotRemovedLocked(locs []noteLoc) []removedNote {
+	sorted := sortLocsByPosition(locs)
+	out := make([]removedNote, len(sorted))
+	for i, loc := range sorted {
+		pid := s.order[loc.projIdx]
+		sec := s.projects[pid].proj.Sections[loc.secIdx]
+		out[i] = removedNote{
+			project: pid,
+			section: sec.ID,
+			title:   sec.Title,
+			index:   loc.noteIdx,
+			note:    sec.Notes[loc.noteIdx],
+		}
+	}
+	return out
+}
+
 // sortLocsByPosition returns a copy of locs in ascending document order
 // — (project, section, position) — independent of the order the caller
 // originally supplied them in. MoveNotes and MergeNotes both use this:

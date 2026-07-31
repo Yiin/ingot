@@ -41,14 +41,9 @@ func (s *fileStore) load() error {
 	return nil
 }
 
-// loadProject reads and parses one project file, deciding whether it's
-// safe to write back per invariant 14: any parse warning or a schema
-// newer than mdfile understands puts it in read-only mode. A project
-// with no persisted front-matter id (a hand-typed checklist file, per
-// mdfile's grammar) gets one minted now, since the rest of the Store
-// keys everything by ProjectID; an empty Sections list gets a lead
-// section synthesized, since invariant 3 requires every project to have
-// at least one.
+// loadProject reads and parses one project file. See
+// parseIncomingProjectLocked for the read-only/id/empty-sections rules
+// applied to its content.
 func (s *fileStore) loadProject(name string) error {
 	path := filepath.Join(s.paths.Projects, name)
 	raw, err := s.fs.ReadFile(path)
@@ -56,6 +51,37 @@ func (s *fileStore) loadProject(name string) error {
 		return fmt.Errorf("fsstore: read %s: %w", path, err)
 	}
 
+	proj, readOnly := s.parseIncomingProjectLocked(raw)
+
+	slug := strings.TrimSuffix(name, ".md")
+	pe := &projectEntry{
+		proj:        proj,
+		path:        path,
+		slug:        slug,
+		readOnly:    readOnly,
+		lastWritten: raw,
+	}
+	s.recordFingerprintLocked(pe, raw)
+	s.projects[proj.ID] = pe
+	s.order = append(s.order, proj.ID)
+	return nil
+}
+
+// parseIncomingProjectLocked parses raw into a Project and decides
+// whether it's safe to write back, per invariant 14: any parse warning
+// or a schema newer than mdfile understands puts it in read-only mode.
+// A project with no persisted front-matter id (a hand-typed checklist
+// file, per mdfile's grammar) — or whose id collides with one already
+// known, most likely two files sharing a hand-copied front-matter block
+// — gets a fresh one minted now, since the rest of the Store keys
+// everything by ProjectID; an empty Sections list gets a lead section
+// synthesized, since invariant 3 requires every project to have at
+// least one. Shared by the startup loader and the watcher's
+// external-create path (reload.go), which face the identical "a project
+// file just appeared" problem. Must be called with s.mu held (loadProject
+// calls it before New hands the Store to a caller, when no concurrent
+// access is possible, which also satisfies this).
+func (s *fileStore) parseIncomingProjectLocked(raw []byte) (store.Project, bool) {
 	proj, warnings, parseErr := mdfile.Parse(raw)
 	readOnly := parseErr != nil || len(warnings) > 0 || proj.Schema > mdfile.CurrentSchema
 
@@ -63,25 +89,10 @@ func (s *fileStore) loadProject(name string) error {
 		proj.ID = store.ProjectID(s.newID())
 	}
 	if _, collision := s.projects[proj.ID]; collision {
-		// Two files sharing a front-matter id — a hand-copied file, most
-		// likely. Silently keying s.projects by proj.ID here would
-		// overwrite the earlier entry while leaving its id still in
-		// s.order, corrupting every index-based lookup that follows.
-		// Give this one a fresh identity instead of colliding.
 		proj.ID = store.ProjectID(s.newID())
 	}
 	if len(proj.Sections) == 0 {
 		proj.Sections = []store.Section{{ID: store.SectionID(s.newID())}}
 	}
-
-	slug := strings.TrimSuffix(name, ".md")
-	s.projects[proj.ID] = &projectEntry{
-		proj:        proj,
-		path:        path,
-		slug:        slug,
-		readOnly:    readOnly,
-		lastWritten: raw,
-	}
-	s.order = append(s.order, proj.ID)
-	return nil
+	return proj, readOnly
 }

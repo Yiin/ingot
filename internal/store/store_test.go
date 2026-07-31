@@ -29,7 +29,7 @@ func (*stub) CreateProject(string) (ProjectID, error)         { return "", nil }
 func (*stub) RenameProject(ProjectID, string) error           { return nil }
 func (*stub) DeleteProject(ProjectID) error                   { return nil }
 func (*stub) Search(string, Scope) ([]Hit, error)             { return nil, nil }
-func (*stub) CanUndo() bool                                   { return false }
+func (*stub) CanUndo() (string, bool)                         { return "", false }
 func (*stub) Undo() error                                     { return nil }
 func (*stub) Subscribe(func(Event)) func()                    { return func() {} }
 func (*stub) Flush(context.Context) error                     { return nil }

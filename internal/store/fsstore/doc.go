@@ -6,7 +6,11 @@
 // doc comment for the single-goroutine threading rule every method here
 // depends on.
 //
-// File watching, conflict resolution, trash, and undo are out of scope
-// here — they land in a later package addition. Options.Watch is
-// accepted and ignored.
+// Setting Options.Watch turns on a background fsnotify watcher over
+// Paths.Projects: an external change reloads the affected project (or,
+// if the panel had pending edits, is preserved to Paths.Trash and
+// overwritten — see reload.go). DeleteNotes, ClearDone, DeleteProject,
+// and DeleteSection's note relocation each also write a trash file
+// before they touch anything (trash.go), and DeleteNotes/ClearDone arm a
+// single level of in-memory undo (undo.go).
 package fsstore

@@ -11,6 +11,7 @@ import (
 
 	"github.com/Yiin/ingot/internal/store"
 	"github.com/Yiin/ingot/internal/store/fsx"
+	"github.com/Yiin/ingot/internal/store/mdfile"
 	"github.com/Yiin/ingot/internal/store/paths"
 )
 
@@ -20,6 +21,7 @@ func testLayout() paths.Layout {
 	return paths.Layout{
 		Projects: "/data/projects",
 		State:    "/state",
+		Trash:    "/data/trash",
 	}
 }
 
@@ -277,6 +279,99 @@ func seedFile(t *testing.T, mem *fsx.MemFS, name, content string) {
 	if err := f.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
+}
+
+// overwriteFile replaces an existing project file's content in mem, the
+// way an external editor's own atomic write would — used to simulate a
+// change made outside the Store. name is relative to /data/projects, as
+// with seedFile.
+func overwriteFile(t *testing.T, mem *fsx.MemFS, name, content string) {
+	t.Helper()
+	path := "/data/projects/" + name
+	if _, err := mem.Stat(path); err == nil {
+		if err := mem.Remove(path); err != nil {
+			t.Fatalf("Remove: %v", err)
+		}
+	}
+	f, err := mem.Create(path)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := f.Write([]byte(content)); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
+// fakeWatcher is a Watcher a test drives by hand instead of touching
+// real inotify, per Options.NewWatcher's seam.
+type fakeWatcher struct {
+	events chan string
+	closed chan struct{}
+}
+
+func newFakeWatcher() *fakeWatcher {
+	return &fakeWatcher{events: make(chan string, 64), closed: make(chan struct{})}
+}
+
+func (w *fakeWatcher) Events() <-chan string { return w.events }
+
+func (w *fakeWatcher) Close() error {
+	select {
+	case <-w.closed:
+	default:
+		close(w.closed)
+		close(w.events)
+	}
+	return nil
+}
+
+// fire delivers path as a watch event, as if fsnotify had just reported
+// a Create/Write/Rename/Remove on it.
+func (w *fakeWatcher) fire(path string) { w.events <- path }
+
+// withWatcher configures Options to use a fresh fakeWatcher, returning it
+// so the test can fire events on it.
+func withWatcher() (*fakeWatcher, func(*Options)) {
+	fw := newFakeWatcher()
+	return fw, func(o *Options) {
+		o.Watch = true
+		o.NewWatcher = func(string) (Watcher, error) { return fw, nil }
+	}
+}
+
+// collectEvents subscribes fn's accumulation to s for the life of the
+// returned unsubscribe func, safe for concurrent delivery from the
+// watcher goroutine's Post callback.
+func collectEvents(s store.Store) (get func() []store.Event, unsub func()) {
+	var mu sync.Mutex
+	var events []store.Event
+	unsub = s.Subscribe(func(ev store.Event) {
+		mu.Lock()
+		events = append(events, ev)
+		mu.Unlock()
+	})
+	get = func() []store.Event {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]store.Event(nil), events...)
+	}
+	return get, unsub
+}
+
+// countEvents counts how many of events are of the same concrete type as
+// want.
+func countEvents(events []store.Event, want store.Event) int {
+	n := 0
+	wantType := fmt.Sprintf("%T", want)
+	for _, ev := range events {
+		if fmt.Sprintf("%T", ev) == wantType {
+			n++
+		}
+	}
+	return n
 }
 
 // --- invariant 3: a project has at least one section; deleting the
@@ -1095,14 +1190,710 @@ func TestSearchFindsAndScopesCorrectly(t *testing.T) {
 	}
 }
 
-func TestUndoIsANoOpUntilItLands(t *testing.T) {
+func TestUndoIsANoOpWithNothingToReverse(t *testing.T) {
 	mem := fsx.NewMem()
 	s := newStore(t, mem, nil)
-	if s.CanUndo() {
-		t.Errorf("CanUndo() = true, want false (single-level undo is a separate child)")
+	if _, ok := s.CanUndo(); ok {
+		t.Errorf("CanUndo() = true, want false on a fresh store")
 	}
 	if err := s.Undo(); err != nil {
 		t.Errorf("Undo() = %v, want nil", err)
+	}
+}
+
+// --- watcher & conflict policy (invariant 14) ---------------------------
+
+func TestOwnWriteProducesNoReload(t *testing.T) {
+	mem := fsx.NewMem()
+	fw, withFW := withWatcher()
+	s := newStore(t, mem, withFW)
+	defer s.Close()
+
+	mustCreateProject(t, s, "Demo")
+	get, unsub := collectEvents(s)
+	defer unsub()
+
+	fw.fire(pathFor("demo"))
+	time.Sleep(300 * time.Millisecond)
+
+	events := get()
+	if n := countEvents(events, store.ProjectReloaded{}); n != 0 {
+		t.Errorf("got %d ProjectReloaded for our own write, want 0: %+v", n, events)
+	}
+	if n := countEvents(events, store.ConflictResolved{}); n != 0 {
+		t.Errorf("got %d ConflictResolved for our own write, want 0: %+v", n, events)
+	}
+}
+
+func TestExternalWriteNoPendingChangesReloadsAndPreservesIDs(t *testing.T) {
+	mem := fsx.NewMem()
+	fw, withFW := withWatcher()
+	s := newStore(t, mem, withFW)
+	defer s.Close()
+
+	pid := mustCreateProject(t, s, "Demo")
+	sec := firstSection(t, s, pid)
+	keepID := mustAddNote(t, s, sec, "keep me")
+	mustAddNote(t, s, sec, "will vanish")
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	get, unsub := collectEvents(s)
+	defer unsub()
+
+	raw := "---\ningot: 1\nid: " + string(pid) + "\ntitle: Demo\n---\n\n" +
+		"- [ ] keep me\n\n- [ ] new from outside\n"
+	overwriteFile(t, mem, "demo.md", raw)
+	fw.fire(pathFor("demo"))
+	time.Sleep(400 * time.Millisecond)
+
+	events := get()
+	if n := countEvents(events, store.ProjectReloaded{}); n != 1 {
+		t.Fatalf("got %d ProjectReloaded, want 1: %+v", n, events)
+	}
+
+	proj, err := s.Project(pid)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	if len(proj.Sections) != 1 || len(proj.Sections[0].Notes) != 2 {
+		t.Fatalf("reloaded project = %+v", proj)
+	}
+	if got := proj.Sections[0].Notes[0].ID; got != keepID {
+		t.Errorf("unchanged note's id = %s, want the original %s (carried across by matching body)", got, keepID)
+	}
+	if proj.Sections[0].Notes[1].ID == "" || proj.Sections[0].Notes[1].ID == keepID {
+		t.Errorf("new note's id = %s, want a fresh distinct id", proj.Sections[0].Notes[1].ID)
+	}
+}
+
+func TestExternalWriteWithPendingChangesResolvesConflict(t *testing.T) {
+	mem := fsx.NewMem()
+	fw, withFW := withWatcher()
+	s := newStore(t, mem, withFW)
+	defer s.Close()
+
+	pid := mustCreateProject(t, s, "Demo")
+	sec := firstSection(t, s, pid)
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	// AddNote only debounces (invariant: not an immediate-flush
+	// mutation) — this leaves the project dirty, so the watch event
+	// below must resolve as a conflict rather than a plain reload.
+	pendingID := mustAddNote(t, s, sec, "pending panel change")
+
+	get, unsub := collectEvents(s)
+	defer unsub()
+
+	externalRaw := "---\ningot: 1\nid: " + string(pid) + "\ntitle: Demo\n---\n\n- [ ] external edit\n"
+	overwriteFile(t, mem, "demo.md", externalRaw)
+	fw.fire(pathFor("demo"))
+	time.Sleep(400 * time.Millisecond)
+
+	events := get()
+	var resolved *store.ConflictResolved
+	for _, ev := range events {
+		if cr, ok := ev.(store.ConflictResolved); ok {
+			c := cr
+			resolved = &c
+		}
+	}
+	if resolved == nil {
+		t.Fatalf("no ConflictResolved event: %+v", events)
+	}
+	if resolved.ID != pid {
+		t.Errorf("ConflictResolved.ID = %s, want %s", resolved.ID, pid)
+	}
+
+	trashRaw, err := mem.ReadFile(resolved.SavedTo)
+	if err != nil {
+		t.Fatalf("read trashed external content at %s: %v", resolved.SavedTo, err)
+	}
+	if string(trashRaw) != externalRaw {
+		t.Errorf("trashed content = %q, want the external write verbatim %q", trashRaw, externalRaw)
+	}
+
+	liveRaw, err := mem.ReadFile(pathFor("demo"))
+	if err != nil {
+		t.Fatalf("read live file: %v", err)
+	}
+	if strings.Contains(string(liveRaw), "external edit") {
+		t.Errorf("live file still contains the external content: %q", liveRaw)
+	}
+	if !strings.Contains(string(liveRaw), "pending panel change") {
+		t.Errorf("live file lost the panel's pending change: %q", liveRaw)
+	}
+
+	proj, err := s.Project(pid)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	found := false
+	for _, n := range proj.Sections[0].Notes {
+		if n.ID == pendingID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("in-memory project lost the pending note after conflict resolution")
+	}
+}
+
+func TestFiveEventsWithin200msProduceOneReload(t *testing.T) {
+	mem := fsx.NewMem()
+	fw, withFW := withWatcher()
+	s := newStore(t, mem, withFW)
+	defer s.Close()
+
+	pid := mustCreateProject(t, s, "Demo")
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	get, unsub := collectEvents(s)
+	defer unsub()
+
+	raw := "---\ningot: 1\nid: " + string(pid) + "\ntitle: Demo\n---\n\n- [ ] x\n"
+	overwriteFile(t, mem, "demo.md", raw)
+	for i := 0; i < 5; i++ {
+		fw.fire(pathFor("demo"))
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(400 * time.Millisecond)
+
+	events := get()
+	if n := countEvents(events, store.ProjectReloaded{}); n != 1 {
+		t.Errorf("got %d ProjectReloaded for 5 events within 200ms, want 1: %+v", n, events)
+	}
+}
+
+// --- trash --------------------------------------------------------------
+
+func TestDeleteNotesWritesOneReparsableTrashFile(t *testing.T) {
+	mem := fsx.NewMem()
+	s := newStore(t, mem, nil)
+	pid := mustCreateProject(t, s, "Demo")
+	sec := firstSection(t, s, pid)
+	mustAddNote(t, s, sec, "keep")
+	toRemove := mustAddNote(t, s, sec, "remove me")
+
+	if err := s.DeleteNotes([]store.NoteID{toRemove}); err != nil {
+		t.Fatalf("DeleteNotes: %v", err)
+	}
+
+	entries, err := mem.ReadDir("/data/trash")
+	if err != nil {
+		t.Fatalf("ReadDir trash: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d trash files, want exactly 1: %v", len(entries), entries)
+	}
+
+	raw, err := mem.ReadFile("/data/trash/" + entries[0].Name())
+	if err != nil {
+		t.Fatalf("ReadFile trash: %v", err)
+	}
+	proj, _, err := mdfile.Parse(raw)
+	if err != nil {
+		t.Fatalf("Parse trash file: %v", err)
+	}
+	var bodies []string
+	for _, sec := range proj.Sections {
+		for _, n := range sec.Notes {
+			bodies = append(bodies, n.Body)
+		}
+	}
+	if len(bodies) != 1 || bodies[0] != "remove me" {
+		t.Errorf("trash file re-parsed to %v, want [%q]", bodies, "remove me")
+	}
+}
+
+func TestDeleteProjectMovesFileToTrashInsteadOfUnlinking(t *testing.T) {
+	mem := fsx.NewMem()
+	s := newStore(t, mem, nil)
+	pid := mustCreateProject(t, s, "Demo")
+	sec := firstSection(t, s, pid)
+	mustAddNote(t, s, sec, "keep me around")
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	liveBefore, err := mem.ReadFile(pathFor("demo"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+
+	if err := s.DeleteProject(pid); err != nil {
+		t.Fatalf("DeleteProject: %v", err)
+	}
+
+	if _, err := mem.ReadFile(pathFor("demo")); err == nil {
+		t.Errorf("deleted project's file still exists at its original path")
+	}
+
+	entries, err := mem.ReadDir("/data/trash")
+	if err != nil {
+		t.Fatalf("ReadDir trash: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d trash entries, want 1: %v", len(entries), entries)
+	}
+	trashed, err := mem.ReadFile("/data/trash/" + entries[0].Name())
+	if err != nil {
+		t.Fatalf("ReadFile trash: %v", err)
+	}
+	if string(trashed) != string(liveBefore) {
+		t.Errorf("trashed content = %q, want the exact live bytes %q", trashed, liveBefore)
+	}
+}
+
+func TestPruneTrashCapsFileCount(t *testing.T) {
+	mem := fsx.NewMem()
+	if err := mem.MkdirAll("/data/trash", 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	for i := 0; i < 210; i++ {
+		name := fmt.Sprintf("/data/trash/f%03d.md", i)
+		f, err := mem.Create(name)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if _, err := f.Write([]byte("x")); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	}
+
+	_ = newStore(t, mem, nil) // New() prunes trash on startup.
+
+	entries, err := mem.ReadDir("/data/trash")
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) > 200 {
+		t.Errorf("trash has %d files after New(), want <= 200", len(entries))
+	}
+}
+
+// --- single-level undo ---------------------------------------------------
+
+func idsOf(notes []store.Note) []store.NoteID {
+	ids := make([]store.NoteID, len(notes))
+	for i, n := range notes {
+		ids[i] = n.ID
+	}
+	return ids
+}
+
+func TestClearDoneThenUndoRestoresExactPositions(t *testing.T) {
+	mem := fsx.NewMem()
+	s := newStore(t, mem, nil)
+	pid := mustCreateProject(t, s, "Demo")
+	secA, err := s.AddSection(pid, "A")
+	if err != nil {
+		t.Fatalf("AddSection: %v", err)
+	}
+	lead := firstSection(t, s, pid)
+
+	mustAddNote(t, s, lead, "n0")
+	n1 := mustAddNote(t, s, lead, "n1 done")
+	mustAddNote(t, s, lead, "n2")
+	if err := s.SetNoteDone(n1, true); err != nil {
+		t.Fatalf("SetNoteDone: %v", err)
+	}
+
+	m0 := mustAddNote(t, s, secA, "m0 done")
+	mustAddNote(t, s, secA, "m1")
+	if err := s.SetNoteDone(m0, true); err != nil {
+		t.Fatalf("SetNoteDone: %v", err)
+	}
+
+	before, err := s.Project(pid)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	if label, ok := s.CanUndo(); ok {
+		t.Fatalf("CanUndo() before ClearDone = (%q, true), want false", label)
+	}
+
+	if err := s.ClearDone(); err != nil {
+		t.Fatalf("ClearDone: %v", err)
+	}
+
+	label, ok := s.CanUndo()
+	if !ok {
+		t.Fatalf("CanUndo() after ClearDone = false, want true")
+	}
+	if want := "Undo Clear Done (2 notes)"; label != want {
+		t.Errorf("CanUndo label = %q, want %q", label, want)
+	}
+
+	if err := s.Undo(); err != nil {
+		t.Fatalf("Undo: %v", err)
+	}
+	if _, ok := s.CanUndo(); ok {
+		t.Errorf("CanUndo() after Undo = true, want false (single level)")
+	}
+
+	after, err := s.Project(pid)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	if len(after.Sections) != len(before.Sections) {
+		t.Fatalf("sections = %d, want %d", len(after.Sections), len(before.Sections))
+	}
+	for si := range before.Sections {
+		wantIDs := idsOf(before.Sections[si].Notes)
+		gotIDs := idsOf(after.Sections[si].Notes)
+		if len(gotIDs) != len(wantIDs) {
+			t.Fatalf("section %d: got %d notes, want %d", si, len(gotIDs), len(wantIDs))
+		}
+		for i := range wantIDs {
+			if gotIDs[i] != wantIDs[i] {
+				t.Errorf("section %d index %d: id = %s, want %s", si, i, gotIDs[i], wantIDs[i])
+			}
+		}
+	}
+}
+
+func TestUndoSlotClearedBySubsequentMutation(t *testing.T) {
+	mem := fsx.NewMem()
+	s := newStore(t, mem, nil)
+	pid := mustCreateProject(t, s, "Demo")
+	sec := firstSection(t, s, pid)
+	a := mustAddNote(t, s, sec, "a")
+	if err := s.SetNoteDone(a, true); err != nil {
+		t.Fatalf("SetNoteDone: %v", err)
+	}
+
+	if err := s.ClearDone(); err != nil {
+		t.Fatalf("ClearDone: %v", err)
+	}
+	if _, ok := s.CanUndo(); !ok {
+		t.Fatalf("CanUndo() after ClearDone = false, want true")
+	}
+
+	if _, err := s.AddNote(sec, "b"); err != nil {
+		t.Fatalf("AddNote: %v", err)
+	}
+
+	if _, ok := s.CanUndo(); ok {
+		t.Errorf("CanUndo() after a subsequent mutation = true, want false")
+	}
+}
+
+// --- regression: conflict resolution must physically overwrite the
+// external content even when the panel's version happens to format
+// byte-identical to what this Store last wrote (flushLocked's normal
+// "unchanged" short-circuit compares against the wrong baseline here) --
+
+func TestConflictResolutionOverwritesEvenWhenContentMatchesLastWritten(t *testing.T) {
+	mem := fsx.NewMem()
+	fw, withFW := withWatcher()
+	s := newStore(t, mem, withFW)
+	defer s.Close()
+
+	pid := mustCreateProject(t, s, "Demo")
+	sec := firstSection(t, s, pid)
+	nid := mustAddNote(t, s, sec, "note")
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	// Toggle done and back off: the project goes dirty again, but Done
+	// is false again and DoneAt isn't serialized, so the freshly
+	// formatted bytes end up identical to what was last written.
+	if err := s.SetNoteDone(nid, true); err != nil {
+		t.Fatalf("SetNoteDone(true): %v", err)
+	}
+	if err := s.SetNoteDone(nid, false); err != nil {
+		t.Fatalf("SetNoteDone(false): %v", err)
+	}
+
+	get, unsub := collectEvents(s)
+	defer unsub()
+
+	externalRaw := "---\ningot: 1\nid: " + string(pid) + "\ntitle: Demo\n---\n\n- [ ] external intruder\n"
+	overwriteFile(t, mem, "demo.md", externalRaw)
+	fw.fire(pathFor("demo"))
+	time.Sleep(400 * time.Millisecond)
+
+	events := get()
+	if n := countEvents(events, store.ConflictResolved{}); n != 1 {
+		t.Fatalf("got %d ConflictResolved, want 1: %+v", n, events)
+	}
+
+	liveRaw, err := mem.ReadFile(pathFor("demo"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if strings.Contains(string(liveRaw), "external intruder") {
+		t.Errorf("live file still holds the external content after conflict resolution: %q", liveRaw)
+	}
+	if !strings.Contains(string(liveRaw), "note") {
+		t.Errorf("live file lost the panel's content: %q", liveRaw)
+	}
+}
+
+// --- regression (copper-l2z.47): a debounced or immediate-flush save
+// must not clobber an external write the watcher hasn't settled on yet.
+// The watcher needs ~200ms of quiet before it reacts at all; flushLocked
+// itself must Stat+hash the live file before every write instead of
+// trusting the watcher to have caught up. These tests never fire the
+// fakeWatcher at all, simulating the save side of the race winning. -----
+
+func TestFlushDetectsExternalWriteBeforeWatcherSettles(t *testing.T) {
+	mem := fsx.NewMem()
+	fw, withFW := withWatcher()
+	s := newStore(t, mem, withFW)
+	defer s.Close()
+
+	pid := mustCreateProject(t, s, "Demo")
+	sec := firstSection(t, s, pid)
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	// AddNote only debounces — the project is dirty with its idle timer
+	// still pending when the external write below lands, exactly as at
+	// T=0/T=240ms in the race the bug describes.
+	pendingID := mustAddNote(t, s, sec, "pending panel change")
+
+	get, unsub := collectEvents(s)
+	defer unsub()
+
+	externalRaw := "---\ningot: 1\nid: " + string(pid) + "\ntitle: Demo\n---\n\n- [ ] external edit\n"
+	overwriteFile(t, mem, "demo.md", externalRaw)
+
+	// Never call fw.fire: the watcher's own 200ms debounce hasn't (and,
+	// in this test, never will) settle on the external write. Flush
+	// forces the save path to run right now — the same doFlush a real
+	// idle-timer fire reaches — so if flushLocked doesn't check for an
+	// external change on its own, this clobbers externalRaw with no
+	// trace.
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	events := get()
+	if n := countEvents(events, store.ConflictResolved{}); n != 1 {
+		t.Fatalf("got %d ConflictResolved from Flush, want 1: %+v", n, events)
+	}
+	var resolved store.ConflictResolved
+	for _, ev := range events {
+		if cr, ok := ev.(store.ConflictResolved); ok {
+			resolved = cr
+		}
+	}
+	if resolved.ID != pid {
+		t.Errorf("ConflictResolved.ID = %s, want %s", resolved.ID, pid)
+	}
+
+	trashRaw, err := mem.ReadFile(resolved.SavedTo)
+	if err != nil {
+		t.Fatalf("read trashed external content at %s: %v", resolved.SavedTo, err)
+	}
+	if string(trashRaw) != externalRaw {
+		t.Errorf("trashed content = %q, want the external write verbatim %q", trashRaw, externalRaw)
+	}
+
+	liveRaw, err := mem.ReadFile(pathFor("demo"))
+	if err != nil {
+		t.Fatalf("read live file: %v", err)
+	}
+	if strings.Contains(string(liveRaw), "external edit") {
+		t.Errorf("live file still contains the external content: %q", liveRaw)
+	}
+	if !strings.Contains(string(liveRaw), "pending panel change") {
+		t.Errorf("live file lost the panel's pending change: %q", liveRaw)
+	}
+
+	proj, err := s.Project(pid)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	found := false
+	for _, n := range proj.Sections[0].Notes {
+		if n.ID == pendingID {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("in-memory project lost the pending note after conflict resolution")
+	}
+
+	// The watcher firing late (as it eventually would in production)
+	// must not react to the save that already resolved this — the fresh
+	// fingerprint flushLocked recorded is this Store's own write.
+	fw.fire(pathFor("demo"))
+	time.Sleep(400 * time.Millisecond)
+	if n := countEvents(get(), store.ConflictResolved{}); n != 1 {
+		t.Errorf("got %d ConflictResolved after the late watcher event, want still 1", n)
+	}
+}
+
+// TestFlushDetectsExternalWriteWithNoWatcherConfigured covers the same
+// race with Options.Watch left off entirely (the default for anything
+// that doesn't need live reload) — flushLocked's own check must not
+// depend on a watcher existing at all.
+func TestFlushDetectsExternalWriteWithNoWatcherConfigured(t *testing.T) {
+	mem := fsx.NewMem()
+	s := newStore(t, mem, nil)
+	defer s.Close()
+
+	pid := mustCreateProject(t, s, "Demo")
+	sec := firstSection(t, s, pid)
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	mustAddNote(t, s, sec, "pending panel change")
+
+	get, unsub := collectEvents(s)
+	defer unsub()
+
+	externalRaw := "---\ningot: 1\nid: " + string(pid) + "\ntitle: Demo\n---\n\n- [ ] external edit\n"
+	overwriteFile(t, mem, "demo.md", externalRaw)
+
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	events := get()
+	if n := countEvents(events, store.ConflictResolved{}); n != 1 {
+		t.Fatalf("got %d ConflictResolved from Flush, want 1: %+v", n, events)
+	}
+
+	liveRaw, err := mem.ReadFile(pathFor("demo"))
+	if err != nil {
+		t.Fatalf("read live file: %v", err)
+	}
+	if strings.Contains(string(liveRaw), "external edit") {
+		t.Errorf("live file still contains the external content: %q", liveRaw)
+	}
+	if !strings.Contains(string(liveRaw), "pending panel change") {
+		t.Errorf("live file lost the panel's pending change: %q", liveRaw)
+	}
+}
+
+// --- regression: an external delete while edits are still pending must
+// not drop them with no trace -------------------------------------------
+
+func TestExternalDeleteWhilePendingPreservesToTrash(t *testing.T) {
+	mem := fsx.NewMem()
+	fw, withFW := withWatcher()
+	s := newStore(t, mem, withFW)
+	defer s.Close()
+
+	pid := mustCreateProject(t, s, "Demo")
+	sec := firstSection(t, s, pid)
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	mustAddNote(t, s, sec, "unsaved edit") // debounced only, still pending
+
+	get, unsub := collectEvents(s)
+	defer unsub()
+
+	if err := mem.Remove(pathFor("demo")); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	fw.fire(pathFor("demo"))
+	time.Sleep(400 * time.Millisecond)
+
+	events := get()
+	if n := countEvents(events, store.ProjectListChanged{}); n == 0 {
+		t.Fatalf("no ProjectListChanged after external delete: %+v", events)
+	}
+	if _, err := s.Project(pid); err != store.ErrNotFound {
+		t.Errorf("Project(externally deleted) = %v, want ErrNotFound", err)
+	}
+
+	entries, err := mem.ReadDir("/data/trash")
+	if err != nil {
+		t.Fatalf("ReadDir trash: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d trash entries, want 1 (the pending edit's snapshot): %v", len(entries), entries)
+	}
+	raw, err := mem.ReadFile("/data/trash/" + entries[0].Name())
+	if err != nil {
+		t.Fatalf("ReadFile trash: %v", err)
+	}
+	if !strings.Contains(string(raw), "unsaved edit") {
+		t.Errorf("trashed snapshot missing the pending edit: %q", raw)
+	}
+}
+
+// --- regression: DeleteProject must flush a still-debounced pending
+// edit before moving the file to trash, not trash a stale copy ---------
+
+func TestDeleteProjectFlushesPendingEditBeforeTrashing(t *testing.T) {
+	mem := fsx.NewMem()
+	s := newStore(t, mem, nil)
+	pid := mustCreateProject(t, s, "Demo")
+	sec := firstSection(t, s, pid)
+	mustAddNote(t, s, sec, "last-second edit") // debounced only
+
+	if err := s.DeleteProject(pid); err != nil {
+		t.Fatalf("DeleteProject: %v", err)
+	}
+
+	entries, err := mem.ReadDir("/data/trash")
+	if err != nil {
+		t.Fatalf("ReadDir trash: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("got %d trash entries, want 1: %v", len(entries), entries)
+	}
+	raw, err := mem.ReadFile("/data/trash/" + entries[0].Name())
+	if err != nil {
+		t.Fatalf("ReadFile trash: %v", err)
+	}
+	if !strings.Contains(string(raw), "last-second edit") {
+		t.Errorf("trashed project missing an edit that hadn't been debounce-flushed yet: %q", raw)
+	}
+}
+
+// --- regression: a rename's Remove-shaped and Create-shaped events must
+// process in an order that preserves the project's identity -----------
+
+func TestExternalRenameProcessesRemovalsBeforeCreates(t *testing.T) {
+	mem := fsx.NewMem()
+	fw, withFW := withWatcher()
+	s := newStore(t, mem, withFW)
+	defer s.Close()
+
+	pid := mustCreateProject(t, s, "Demo")
+	if err := s.Flush(context.Background()); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+
+	raw, err := mem.ReadFile(pathFor("demo"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if err := mem.Remove(pathFor("demo")); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	seedFile(t, mem, "renamed.md", string(raw))
+
+	// Real fsnotify would deliver these as distinct events for distinct
+	// paths, coalesced by watchLoop into one batch since they land
+	// within 200ms of each other — exercise that same batch shape here.
+	fw.fire(pathFor("demo"))
+	fw.fire(pathFor("renamed"))
+	time.Sleep(400 * time.Millisecond)
+
+	if _, err := s.Project(pid); err != nil {
+		t.Errorf("Project(%s) after an external rename = %v, want the same id still resolving (identity preserved)", pid, err)
+	}
+	if refs := s.Projects(); len(refs) != 1 {
+		t.Fatalf("got %d projects after rename, want 1: %+v", len(refs), refs)
 	}
 }
 

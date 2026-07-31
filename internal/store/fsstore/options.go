@@ -43,10 +43,17 @@ type Options struct {
 	// without a save, regardless of how often Debounce keeps resetting.
 	// Defaults to 2s.
 	MaxDelay time.Duration
-	// Watch is accepted and ignored: file watching is a separate
-	// package addition. Reserved so Options doesn't need to change
-	// shape when it lands.
+	// Watch enables the background file watcher over Paths.Projects,
+	// which drives ProjectReloaded/ConflictResolved/ProjectListChanged
+	// for changes made outside the Store. Off by default: a one-shot
+	// invocation, or a test with no need for live reload, shouldn't pay
+	// for an inotify fd and goroutine it will never drain.
 	Watch bool
+	// NewWatcher constructs the Watcher used when Watch is set, given
+	// the directory to watch. Defaults to a real fsnotify-backed
+	// watcher. Tests inject a fake here instead of touching real
+	// inotify, per the same seam convention as FS.
+	NewWatcher func(dir string) (Watcher, error)
 }
 
 func (o Options) withDefaults() Options {
@@ -64,6 +71,9 @@ func (o Options) withDefaults() Options {
 	}
 	if o.MaxDelay <= 0 {
 		o.MaxDelay = defaultMaxDelay
+	}
+	if o.NewWatcher == nil {
+		o.NewWatcher = newFsnotifyWatcher
 	}
 	return o
 }

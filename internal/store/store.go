@@ -83,11 +83,15 @@ type Store interface {
 	// ordered by relevance.
 	Search(query string, scope Scope) ([]Hit, error)
 
-	// CanUndo reports whether Undo has anything to reverse. Ingot keeps
-	// a single level of undo, not a stack.
-	CanUndo() bool
-	// Undo reverses the most recent mutation, or is a no-op if CanUndo
-	// is false.
+	// CanUndo reports whether Undo has anything to reverse, and if so a
+	// UI-ready label for it (e.g. "Undo Clear Done (4 notes)"). Ingot
+	// keeps a single level of undo, not a stack: only the most recent
+	// destructive operation is ever reversible, and any further
+	// mutation — including a successful Undo itself — clears the slot.
+	CanUndo() (label string, ok bool)
+	// Undo reverses the most recent destructive operation, restoring
+	// every note it removed to its original section and index, or is a
+	// no-op if CanUndo is false.
 	Undo() error
 
 	// Subscribe registers fn to receive every future Event
