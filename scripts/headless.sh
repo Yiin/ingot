@@ -7,6 +7,10 @@
 # exits with the command's exit status. Used by `make test-integration`
 # and `make screenshot`.
 #
+# Set INGOT_TEST_RUNTIME_DIR to override the default runtime dir below —
+# needed when running two of these concurrently (e.g. parallel workers on
+# one machine), since sway's own socket would otherwise collide.
+#
 # Requirements below are measured, not assumed — see copper-l2z's
 # "Wayland behaviour" notes:
 #
@@ -35,7 +39,7 @@ fi
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
-runtime_dir="/run/user/$(id -u)/ingot-test"
+runtime_dir="${INGOT_TEST_RUNTIME_DIR:-/run/user/$(id -u)/ingot-test}"
 mkdir -p "$runtime_dir"
 chmod 700 "$runtime_dir"
 
