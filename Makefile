@@ -28,8 +28,16 @@ bench:
 # build tag and need a real (or headless) compositor to do anything but
 # skip themselves, so this runs them inside scripts/headless.sh's sway
 # session rather than the bare `go test`.
+#
+# -p 1 is load-bearing, not a speed knob. Every package here shares the
+# ONE sway session headless.sh starts, and several open real toplevels.
+# Run in parallel, those windows steal keyboard focus from each other,
+# so internal/e2e's wtype keystrokes land in another package's window
+# and its note never reaches disk. Measured: internal/e2e passed 3/3 in
+# isolation and failed in the same full suite run without -p 1; the
+# whole suite passes with it.
 test-integration:
-	./scripts/headless.sh go test -tags integration ./...
+	./scripts/headless.sh go test -tags integration -p 1 ./...
 
 # Regenerates assets/screenshot.png from a genuine capture of the real
 # assembled panel (internal/ui/panel.Shell with fixture notes, mapped as
