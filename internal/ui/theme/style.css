@@ -74,6 +74,11 @@
   --toast-h: 34;
   --toast-radius: 17;
   --toast-pad-x: 16;
+  --toast-dark-bg: #0B0B0B;
+  --toast-dark-text: #FFFFFF;
+  --toast-light-bg: rgba(255,255,255,.72);
+  --toast-light-blur: blur(20px);
+  --toast-light-text: #1C1C1E;
 
   --placeholder-border: rgba(0,0,0,.12);
   --scrollbar-w: 5;
@@ -267,20 +272,69 @@
   padding-left: calc(var(--toast-pad-x) * 1px);
   padding-right: calc(var(--toast-pad-x) * 1px);
   font-size: calc(var(--font-toast) * 1px);
-  transition: opacity 160ms ease;
+  font-weight: 600;
 }
 
-/* The dark global HUD, shown outside the panel over the desktop. */
+/* The dark global HUD, shown outside the panel over the desktop —
+ * opaque near-black, no icon, white Semibold text. */
 .toast-dark {
-  background-color: var(--ink);
-  color: #FFFFFF;
+  background-color: var(--toast-dark-bg);
+  color: var(--toast-dark-text);
 }
 
-/* The light in-panel toast, matching the panel's own surfaces. */
+/* The light in-panel toast: translucent, not a flat fill — frame 40.5s
+ * shows the focus ring and text of the card behind it showing through,
+ * so this is a vibrancy material (backdrop-filter), matching the
+ * panel's own surfaces only in tone, not opacity. */
 .toast-light {
-  background-color: var(--card-bg-hover);
-  color: var(--ink);
+  background-color: var(--toast-light-bg);
+  backdrop-filter: var(--toast-light-blur);
+  color: var(--toast-light-text);
   box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+/* internal/ui/toast's fade: 140ms scale(0.94)->1 in, 120ms
+ * translateY(0->4px) out — done inside Ingot rather than relying on the
+ * compositor's own surface open/close animation. Gated by class, not
+ * applied unconditionally, so a held toast's text-only replace (see
+ * sequencer's "never stack" replace path) never replays either
+ * animation. */
+@keyframes ingot-toast-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.toast-dark.toast-in,
+.toast-light.toast-in {
+  animation: ingot-toast-in 140ms cubic-bezier(0, 0, 0.58, 1) 1;
+}
+
+@keyframes ingot-toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* forwards: the timer that actually hides/unreveals the toast (internal/
+ * ui/toast) fires on the same 120ms duration, but on GLib's wall clock
+ * rather than the frame clock driving this animation — without
+ * forwards, a few ms of clock skew would let the box repaint back to its
+ * unanimated (opaque) resting style for a frame before the timer's
+ * callback actually hides it. */
+.toast-dark.toast-out,
+.toast-light.toast-out {
+  animation: ingot-toast-out 120ms ease 1 forwards;
 }
 
 /* The circular checkbox ring; checkbutton's internal CSS node is "check". */
