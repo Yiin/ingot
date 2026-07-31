@@ -42,11 +42,11 @@ func TestPostRunsOnRunGoroutineThread(t *testing.T) {
 		// Without a hold, GApplication's use count is 0 after the startup
 		// signal returns and Run may exit before the idle source below
 		// ever gets a main-loop iteration to fire in.
-		a.Application.Hold()
+		a.Hold()
 		a.Post(func() {
 			postTID = syscall.Gettid()
 			ran.Store(true)
-			a.Application.Quit()
+			a.Quit()
 		})
 	})
 
@@ -70,7 +70,7 @@ func TestActionPanicLeavesAppAlive(t *testing.T) {
 	var afterPanicRan atomic.Bool
 
 	app.OnStartup(func(a *App) {
-		a.Application.Hold()
+		a.Hold()
 		a.AddAction("boom", func() {
 			panic("boom")
 		})
@@ -78,7 +78,7 @@ func TestActionPanicLeavesAppAlive(t *testing.T) {
 			a.ActivateAction("boom", nil)
 			a.Post(func() {
 				afterPanicRan.Store(true)
-				a.Application.Quit()
+				a.Quit()
 			})
 		})
 	})

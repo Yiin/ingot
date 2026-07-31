@@ -16,7 +16,7 @@ import (
 func serveFixture(t *testing.T, conn net.Conn, fixture []byte) {
 	t.Helper()
 	go func() {
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		var discard [24]byte
 		if _, err := io.ReadFull(conn, discard[:]); err != nil {
 			return
@@ -37,7 +37,7 @@ func TestFetchGlobals_RecordedRegistryDump(t *testing.T) {
 	}
 
 	client, server := net.Pipe()
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	serveFixture(t, server, fixture)
 
 	globals, err := fetchGlobals(context.Background(), client)
@@ -78,10 +78,10 @@ func TestFetchGlobals_RecordedRegistryDump(t *testing.T) {
 // to degrade.
 func TestFetchGlobals_ProtocolError(t *testing.T) {
 	client, server := net.Pipe()
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	go func() {
-		defer server.Close()
+		defer func() { _ = server.Close() }()
 		var discard [24]byte
 		if _, err := io.ReadFull(server, discard[:]); err != nil {
 			return
@@ -108,8 +108,8 @@ func TestFetchGlobals_ProtocolError(t *testing.T) {
 // connection but never replies doesn't hang fetchGlobals forever.
 func TestFetchGlobals_ContextDeadline(t *testing.T) {
 	client, server := net.Pipe()
-	defer client.Close()
-	defer server.Close()
+	defer func() { _ = client.Close() }()
+	defer func() { _ = server.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()

@@ -29,17 +29,6 @@ func waitForEvent(t *testing.T, ch <-chan Event, timeout time.Duration) Event {
 	}
 }
 
-func requireNoEvent(t *testing.T, ch <-chan Event, within time.Duration) {
-	t.Helper()
-	select {
-	case ev, ok := <-ch:
-		if ok {
-			t.Fatalf("unexpected event delivered: %+v", ev)
-		}
-	case <-time.After(within):
-	}
-}
-
 func waitUntil(t *testing.T, timeout time.Duration, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)

@@ -180,12 +180,12 @@ func dialGlobalShortcuts(ctx context.Context, dial wlDialFunc, defs []gsShortcut
 		deadline = d
 	}
 	if err := conn.SetDeadline(deadline); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 
 	if err := setupGlobalShortcuts(conn, defs); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 
@@ -193,7 +193,7 @@ func dialGlobalShortcuts(ctx context.Context, dial wlDialFunc, defs []gsShortcut
 	// unsolicited event with no fixed cadence, so the deadline that
 	// bounded setup must not keep bounding the read loop.
 	if err := conn.SetDeadline(time.Time{}); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, err
 	}
 

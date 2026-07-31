@@ -121,7 +121,7 @@ func newFakeReqServer(t *testing.T, path string) *fakeReqServer {
 				return
 			}
 			go func() {
-				defer conn.Close()
+				defer func() { _ = conn.Close() }()
 				buf := make([]byte, 4096)
 				if _, err := conn.Read(buf); err == nil {
 					_, _ = conn.Write([]byte("ok"))
@@ -129,7 +129,7 @@ func newFakeReqServer(t *testing.T, path string) *fakeReqServer {
 			}()
 		}
 	}()
-	t.Cleanup(func() { ln.Close() })
+	t.Cleanup(func() { _ = ln.Close() })
 	return s
 }
 
@@ -156,7 +156,7 @@ func newFakeCompositor(t *testing.T, path string) *fakeCompositor {
 	}
 	c := &fakeCompositor{ln: ln}
 	go c.serve()
-	t.Cleanup(func() { ln.Close() })
+	t.Cleanup(func() { _ = ln.Close() })
 	return c
 }
 
@@ -169,7 +169,7 @@ func (c *fakeCompositor) serve() {
 		c.mu.Lock()
 		c.handshakeErr = err
 		c.mu.Unlock()
-		conn.Close()
+		_ = conn.Close()
 		return
 	}
 	c.mu.Lock()
@@ -309,7 +309,7 @@ func TestHyprlandSourceDrivesDetectorDoubleTap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewHyprlandSource: %v", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	shortcutID := compositor.firstShortcutID(t)
 

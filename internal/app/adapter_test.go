@@ -153,7 +153,7 @@ func TestStoreAdapter_DeleteNotesRemovesLive(t *testing.T) {
 
 func TestStoreAdapter_ConflictResolvedNotifies(t *testing.T) {
 	st := newTestStore(t)
-	st.CreateProject("Notes")
+	_, _ = st.CreateProject("Notes")
 
 	var messages []string
 	model := notelist.NewModel(nil)

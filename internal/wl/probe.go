@@ -68,7 +68,7 @@ func Probe(ctx context.Context) (Capabilities, error) {
 	if err != nil {
 		return caps, nil
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	globals, err := fetchGlobals(ctx, conn)
 	if err != nil {

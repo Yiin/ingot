@@ -308,7 +308,7 @@ func (l *List) ItemAtViewPosition(pos int) *Item {
 // widget this package tracks in rowWidgets, or reaches the ListView
 // itself with no match (a click that landed between rows, or nowhere).
 func (l *List) RowAt(x, y float64) (row gtk.Widgetter, index int, ok bool) {
-	picked := l.listView.Widget.Pick(x, y, gtk.PickDefault)
+	picked := l.listView.Pick(x, y, gtk.PickDefault)
 	lvNative := coreglib.BaseObject(l.listView).Native()
 
 	for w := picked; w != nil; w = gtk.BaseWidget(w).Parent() {

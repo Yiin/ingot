@@ -241,7 +241,7 @@ func (s *hyprlandSource) sendCommand(cmd string) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if _, err := conn.Write([]byte(cmd)); err != nil {
 		return err

@@ -41,24 +41,24 @@ func Run(cmd *exec.Cmd, grace time.Duration, stdoutLimit int64) (stdout, stderr 
 	}
 	stderrR, stderrW, err := os.Pipe()
 	if err != nil {
-		stdoutR.Close()
-		stdoutW.Close()
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
 		return nil, nil, err
 	}
 	cmd.Stdout = stdoutW
 	cmd.Stderr = stderrW
 
 	if err := cmd.Start(); err != nil {
-		stdoutR.Close()
-		stdoutW.Close()
-		stderrR.Close()
-		stderrW.Close()
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
+		_ = stderrR.Close()
+		_ = stderrW.Close()
 		return nil, nil, err
 	}
 	// Our own copies of the write ends; the child (and anything it forks)
 	// keeps them open until it's done with them.
-	stdoutW.Close()
-	stderrW.Close()
+	_ = stdoutW.Close()
+	_ = stderrW.Close()
 
 	stdoutDone := readAsync(stdoutR, stdoutLimit)
 	stderrDone := readAsync(stderrR, 0)
@@ -67,8 +67,8 @@ func Run(cmd *exec.Cmd, grace time.Duration, stdoutLimit int64) (stdout, stderr 
 
 	stdout = collect(stdoutR, stdoutDone, grace)
 	stderr = collect(stderrR, stderrDone, grace)
-	stdoutR.Close()
-	stderrR.Close()
+	_ = stdoutR.Close()
+	_ = stderrR.Close()
 
 	return stdout, stderr, runErr
 }
@@ -83,7 +83,7 @@ func readAsync(f *os.File, limit int64) <-chan []byte {
 	done := make(chan []byte, 1)
 	go func() {
 		sink := &capBuffer{limit: limit}
-		io.Copy(sink, f)
+		_, _ = io.Copy(sink, f)
 		done <- sink.buf.Bytes()
 	}()
 	return done
@@ -121,7 +121,7 @@ func collect(f *os.File, done <-chan []byte, grace time.Duration) []byte {
 	case out := <-done:
 		return out
 	case <-time.After(grace):
-		f.SetReadDeadline(time.Now())
+		_ = f.SetReadDeadline(time.Now())
 		return <-done
 	}
 }

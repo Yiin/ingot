@@ -1207,7 +1207,7 @@ func TestOwnWriteProducesNoReload(t *testing.T) {
 	mem := fsx.NewMem()
 	fw, withFW := withWatcher()
 	s := newStore(t, mem, withFW)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	mustCreateProject(t, s, "Demo")
 	get, unsub := collectEvents(s)
@@ -1229,7 +1229,7 @@ func TestExternalWriteNoPendingChangesReloadsAndPreservesIDs(t *testing.T) {
 	mem := fsx.NewMem()
 	fw, withFW := withWatcher()
 	s := newStore(t, mem, withFW)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	pid := mustCreateProject(t, s, "Demo")
 	sec := firstSection(t, s, pid)
@@ -1272,7 +1272,7 @@ func TestExternalWriteWithPendingChangesResolvesConflict(t *testing.T) {
 	mem := fsx.NewMem()
 	fw, withFW := withWatcher()
 	s := newStore(t, mem, withFW)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	pid := mustCreateProject(t, s, "Demo")
 	sec := firstSection(t, s, pid)
@@ -1345,7 +1345,7 @@ func TestFiveEventsWithin200msProduceOneReload(t *testing.T) {
 	mem := fsx.NewMem()
 	fw, withFW := withWatcher()
 	s := newStore(t, mem, withFW)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	pid := mustCreateProject(t, s, "Demo")
 	if err := s.Flush(context.Background()); err != nil {
@@ -1596,7 +1596,7 @@ func TestConflictResolutionOverwritesEvenWhenContentMatchesLastWritten(t *testin
 	mem := fsx.NewMem()
 	fw, withFW := withWatcher()
 	s := newStore(t, mem, withFW)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	pid := mustCreateProject(t, s, "Demo")
 	sec := firstSection(t, s, pid)
@@ -1651,7 +1651,7 @@ func TestFlushDetectsExternalWriteBeforeWatcherSettles(t *testing.T) {
 	mem := fsx.NewMem()
 	fw, withFW := withWatcher()
 	s := newStore(t, mem, withFW)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	pid := mustCreateProject(t, s, "Demo")
 	sec := firstSection(t, s, pid)
@@ -1744,7 +1744,7 @@ func TestFlushDetectsExternalWriteBeforeWatcherSettles(t *testing.T) {
 func TestFlushDetectsExternalWriteWithNoWatcherConfigured(t *testing.T) {
 	mem := fsx.NewMem()
 	s := newStore(t, mem, nil)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	pid := mustCreateProject(t, s, "Demo")
 	sec := firstSection(t, s, pid)
@@ -1787,7 +1787,7 @@ func TestExternalDeleteWhilePendingPreservesToTrash(t *testing.T) {
 	mem := fsx.NewMem()
 	fw, withFW := withWatcher()
 	s := newStore(t, mem, withFW)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	pid := mustCreateProject(t, s, "Demo")
 	sec := firstSection(t, s, pid)
@@ -1866,7 +1866,7 @@ func TestExternalRenameProcessesRemovalsBeforeCreates(t *testing.T) {
 	mem := fsx.NewMem()
 	fw, withFW := withWatcher()
 	s := newStore(t, mem, withFW)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	pid := mustCreateProject(t, s, "Demo")
 	if err := s.Flush(context.Background()); err != nil {

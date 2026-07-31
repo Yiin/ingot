@@ -31,7 +31,7 @@ func TestLoadMissingFile(t *testing.T) {
 
 func TestLoadMalformedJSON(t *testing.T) {
 	mem := fsx.NewMem()
-	mem.MkdirAll("/meta", 0o755)
+	_ = mem.MkdirAll("/meta", 0o755)
 	writeRaw(t, mem, "/meta/p.json", []byte("{not json"))
 	if got := Load(mem, "/meta/p.json"); got != nil {
 		t.Fatalf("Load(malformed) = %#v, want nil", got)
@@ -40,7 +40,7 @@ func TestLoadMalformedJSON(t *testing.T) {
 
 func TestLoadEmptyFile(t *testing.T) {
 	mem := fsx.NewMem()
-	mem.MkdirAll("/meta", 0o755)
+	_ = mem.MkdirAll("/meta", 0o755)
 	writeRaw(t, mem, "/meta/p.json", []byte(""))
 	if got := Load(mem, "/meta/p.json"); got != nil {
 		t.Fatalf("Load(empty) = %#v, want nil", got)
@@ -49,7 +49,7 @@ func TestLoadEmptyFile(t *testing.T) {
 
 func TestLoadNewerSchemaDiscarded(t *testing.T) {
 	mem := fsx.NewMem()
-	mem.MkdirAll("/meta", 0o755)
+	_ = mem.MkdirAll("/meta", 0o755)
 	writeRaw(t, mem, "/meta/p.json", []byte(`{"schema":999,"entries":{"abc":{"app":"Ghostty"}}}`))
 	if got := Load(mem, "/meta/p.json"); got != nil {
 		t.Fatalf("Load(newer schema) = %#v, want nil", got)
@@ -58,7 +58,7 @@ func TestLoadNewerSchemaDiscarded(t *testing.T) {
 
 func TestLoadUnknownSourceNameDefaultsRatherThanFails(t *testing.T) {
 	mem := fsx.NewMem()
-	mem.MkdirAll("/meta", 0o755)
+	_ = mem.MkdirAll("/meta", 0o755)
 	writeRaw(t, mem, "/meta/p.json", []byte(`{"schema":1,"entries":{"abc":{"source":"from-the-future"}}}`))
 	got := Load(mem, "/meta/p.json")
 	if got == nil {
@@ -71,7 +71,7 @@ func TestLoadUnknownSourceNameDefaultsRatherThanFails(t *testing.T) {
 
 func TestSaveThenLoadRoundTrip(t *testing.T) {
 	mem := fsx.NewMem()
-	mem.MkdirAll("/meta", 0o755)
+	_ = mem.MkdirAll("/meta", 0o755)
 	created := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
 	doneAt := time.Date(2026, 3, 2, 11, 0, 0, 0, time.UTC)
 	entries := map[string]Entry{
@@ -96,7 +96,7 @@ func TestSaveThenLoadRoundTrip(t *testing.T) {
 
 func TestSaveEmptyDeletesFile(t *testing.T) {
 	mem := fsx.NewMem()
-	mem.MkdirAll("/meta", 0o755)
+	_ = mem.MkdirAll("/meta", 0o755)
 	if err := Save(mem, "/meta/p.json", map[string]Entry{"k": {App: "X"}}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestSaveEmptyDeletesFile(t *testing.T) {
 
 func TestSaveEmptyOnAbsentFileIsNoop(t *testing.T) {
 	mem := fsx.NewMem()
-	mem.MkdirAll("/meta", 0o755)
+	_ = mem.MkdirAll("/meta", 0o755)
 	if err := Save(mem, "/meta/never-existed.json", nil); err != nil {
 		t.Fatalf("Save(empty, absent): %v", err)
 	}

@@ -163,7 +163,7 @@ func TestNewLogindLockState_LiveSystemBus(t *testing.T) {
 	if err != nil {
 		t.Skipf("no reachable logind session, skipping: %v", err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 
 	select {
 	case locked := <-l.Locked():

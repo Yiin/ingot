@@ -31,7 +31,7 @@ func newFakeReqServer(t *testing.T, path string) *fakeReqServer {
 	}
 	s := &fakeReqServer{ln: ln}
 	go s.serve()
-	t.Cleanup(func() { ln.Close() })
+	t.Cleanup(func() { _ = ln.Close() })
 	return s
 }
 
@@ -42,7 +42,7 @@ func (s *fakeReqServer) serve() {
 			return
 		}
 		go func() {
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 			buf := make([]byte, 4096)
 			n, err := conn.Read(buf)
 			if err != nil {
@@ -84,7 +84,7 @@ func newFakeGlobalShortcutsServer(t *testing.T, path string) *fakeGlobalShortcut
 	}
 	s := &fakeGlobalShortcutsServer{ln: ln}
 	go s.serve()
-	t.Cleanup(func() { ln.Close() })
+	t.Cleanup(func() { _ = ln.Close() })
 	return s
 }
 
@@ -96,7 +96,7 @@ func (s *fakeGlobalShortcutsServer) serve() {
 		}
 		go func() {
 			if err := s.handshake(conn); err != nil {
-				conn.Close()
+				_ = conn.Close()
 				return
 			}
 			s.mu.Lock()
@@ -244,7 +244,7 @@ func TestNewHyprlandSourceResolvesSocketPathsFromEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewHyprlandSource: %v", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 	_ = gs
 }
 
@@ -257,7 +257,7 @@ func TestHyprlandSourceRegistersBothBinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newHyprlandSource: %v", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	// registerBinds unconditionally unbinds before binding (the fix for
 	// hyprctl keyword bindn's non-idempotence), so construction sends
@@ -288,7 +288,7 @@ func TestHyprlandSourceEmitsPressAndReleaseEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newHyprlandSource: %v", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	// Both edges of one physical tap arrive on the SAME slot's object —
 	// see the hyprlandNames doc in hyprland.go for why a tap is no
@@ -372,7 +372,7 @@ func TestHyprlandSourceTapProducesExactlyOnePressAndOneRelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newHyprlandSource: %v", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	gs.sendShortcut(t, gsSlotL, true)
 	press := mustRecvEvent(t, src)
@@ -405,7 +405,7 @@ func TestHyprlandSourceIgnoresUnrelatedEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newHyprlandSource: %v", err)
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 
 	gs.sendUnrelated(t)
 	gs.sendShortcut(t, gsSlotR, true)
@@ -455,7 +455,7 @@ func TestHyprlandSourcePauseStopsEventsResumeRestartsThem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newHyprlandSource: %v", err)
 	}
-	defer hs.Close()
+	defer func() { _ = hs.Close() }()
 	afterConstruct := len(hyprlandUnbindCommands) + len(hyprlandBindCommands)
 	waitForCount(t, func() int { return len(req.commands()) }, afterConstruct)
 

@@ -56,12 +56,22 @@ vet:
 fmt:
 	gofmt -l .
 
+# Fails rather than skips when golangci-lint is missing. Skipping made
+# every local `make check` look green while CI enforced the linter, so a
+# backlog of findings built up that nobody saw until the repo went
+# public and the badge went red.
+# LINT=skip opts out explicitly, for a machine that genuinely cannot
+# install the linter. Anything else must have it.
 lint:
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
-	else \
-		echo "lint: golangci-lint not installed, skipping"; \
-	fi
+ifeq ($(LINT),skip)
+	@echo "lint: skipped by explicit LINT=skip"
+else
+	@command -v golangci-lint >/dev/null 2>&1 || { \
+		echo "lint: golangci-lint is not installed — install it (pacman -S golangci-lint) or run 'make lint LINT=skip'"; \
+		exit 1; \
+	}
+	golangci-lint run
+endif
 
 check:
 	@test -z "$$(gofmt -l .)" || (echo "gofmt found unformatted files:" && gofmt -l . && exit 1)

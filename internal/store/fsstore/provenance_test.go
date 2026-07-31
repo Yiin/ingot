@@ -102,10 +102,10 @@ func TestProjectLoadsWithSidecarAbsentEmptyMalformedOrUnknownSchema(t *testing.T
 			mem := fsx.NewMem()
 			seedFile(t, mem, "work.md", "---\ningot: 1\nid: 1111111111111111\ntitle: Work\n---\n\n- [ ] hand-typed note\n")
 			if tc.name == "empty" {
-				mem.MkdirAll("/data/meta", 0o755)
+				_ = mem.MkdirAll("/data/meta", 0o755)
 				writeRaw(t, mem, "/data/meta/work.json", nil)
 			} else if tc.meta != "" {
-				mem.MkdirAll("/data/meta", 0o755)
+				_ = mem.MkdirAll("/data/meta", 0o755)
 				writeRaw(t, mem, "/data/meta/work.json", []byte(tc.meta))
 			}
 
