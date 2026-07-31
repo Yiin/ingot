@@ -1,0 +1,332 @@
+package input
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/holoplot/go-evdev"
+)
+
+// ErrHyprlandUnsupported is returned by NewHyprlandSource when the
+// process isn't running under Hyprland (no HYPRLAND_INSTANCE_SIGNATURE)
+// or XDG_RUNTIME_DIR is unset, so the compositor's IPC sockets cannot be
+// located. Callers should treat it as "this fallback does not apply
+// here," never as a startup failure.
+var ErrHyprlandUnsupported = errors.New("input: not running under Hyprland")
+
+// hyprlandNames are the four global-shortcut identities registered with
+// Hyprland: one per (Shift key side, press/release edge). Both the
+// .socket.sock bindn/bindrn registration below and the
+// hyprland_global_shortcuts_manager_v1 registration in
+// hyprland_globalshortcuts.go key off these same strings — Hyprland
+// correlates a physical-key bind to a protocol registration by exact id
+// match.
+var hyprlandNames = struct {
+	lDown, lUp, rDown, rUp string
+}{
+	lDown: "ingot:shiftl_down",
+	lUp:   "ingot:shiftl_up",
+	rDown: "ingot:shiftr_down",
+	rUp:   "ingot:shiftr_up",
+}
+
+// hyprlandBindCommands registers all four binds. "bindn"/"bindrn" are
+// Hyprland's non-consuming press/release bind flags — the "n" flag is
+// what the epic's live verification confirmed leaves Shift still
+// reaching the focused application, unlike a plain "bind" which would
+// swallow it.
+var hyprlandBindCommands = []string{
+	"keyword bindn = , Shift_L, global, " + hyprlandNames.lDown,
+	"keyword bindrn = , Shift_L, global, " + hyprlandNames.lUp,
+	"keyword bindn = , Shift_R, global, " + hyprlandNames.rDown,
+	"keyword bindrn = , Shift_R, global, " + hyprlandNames.rUp,
+}
+
+// hyprlandUnbindCommands removes every bind hyprlandBindCommands
+// registered. "unbind" is keyed by MODS,KEY, which covers both the
+// press and release bind sharing that pair. hyprctl keyword bindn is not
+// idempotent — three identical calls with no intervening unbind produce
+// three duplicate binds, live-verified in copper-l2z.50 — so
+// registerBinds runs this unconditionally before every bind, not only
+// on Pause/Close, on the assumption that Shift_L/Shift_R carry no other
+// legitimate bind this process would be clobbering.
+var hyprlandUnbindCommands = []string{
+	"keyword unbind = , Shift_L",
+	"keyword unbind = , Shift_R",
+}
+
+// dialFunc opens a connection to a Hyprland IPC socket. Tests substitute
+// one that dials a fake listener instead of a real compositor socket.
+type dialFunc func(path string) (net.Conn, error)
+
+func dialUnix(path string) (net.Conn, error) {
+	return net.Dial("unix", path)
+}
+
+// hyprlandSource is the input.Source that fires the double-Shift chord's
+// individual press/release events via Hyprland's native global-keybind
+// mechanism instead of reading /dev/input directly — the fallback for
+// when evdev device nodes are unreadable. It never consumes the Shift
+// key (see hyprlandBindCommands), and internal/hotkey does the
+// double-tap timing exactly as it does for the real evdev.Source, since
+// Hyprland itself has no double-tap primitive.
+//
+// Activation delivery is split across two IPC channels for a reason:
+// .socket.sock's bindn/bindrn registers the physical-key-to-id mapping
+// compositor-side, but Hyprland's "global" dispatcher only reaches a
+// client that separately registered the same id through
+// org.freedesktop.portal.GlobalShortcuts or, as used here,
+// hyprland_global_shortcuts_manager_v1 — see
+// hyprland_globalshortcuts.go for why the portal path doesn't work for
+// a plain Go binary and .socket2.sock never fires at all.
+type hyprlandSource struct {
+	reqPath string
+	dial    dialFunc
+	wlDial  wlDialFunc
+	logger  *slog.Logger
+
+	events chan Event
+
+	mu        sync.Mutex
+	shortcuts *globalShortcutsClient
+	paused    bool
+	closed    bool
+
+	closeOnce sync.Once
+}
+
+var _ Source = (*hyprlandSource)(nil)
+var _ Pauser = (*hyprlandSource)(nil)
+
+// NewHyprlandSource connects to the running Hyprland compositor's IPC
+// socket and Wayland registry, registers the four global binds, and
+// starts listening for their activation via
+// hyprland_global_shortcuts_manager_v1. It returns
+// ErrHyprlandUnsupported without touching anything if Hyprland isn't
+// detected.
+func NewHyprlandSource() (Source, error) {
+	sig := os.Getenv("HYPRLAND_INSTANCE_SIGNATURE")
+	runtimeDir := os.Getenv("XDG_RUNTIME_DIR")
+	if sig == "" || runtimeDir == "" {
+		return nil, ErrHyprlandUnsupported
+	}
+	dir := filepath.Join(runtimeDir, "hypr", sig)
+	return newHyprlandSource(filepath.Join(dir, ".socket.sock"), dialUnix, dialWaylandSocket, slog.Default())
+}
+
+func newHyprlandSource(reqPath string, dial dialFunc, wlDial wlDialFunc, logger *slog.Logger) (*hyprlandSource, error) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	s := &hyprlandSource{
+		reqPath: reqPath,
+		dial:    dial,
+		wlDial:  wlDial,
+		logger:  logger,
+		events:  make(chan Event, 64),
+	}
+
+	if err := s.registerBinds(); err != nil {
+		s.unregisterBinds()
+		return nil, fmt.Errorf("input: hyprland: register binds: %w", err)
+	}
+
+	if err := s.connectShortcuts(); err != nil {
+		s.unregisterBinds()
+		return nil, fmt.Errorf("input: hyprland: connect global shortcuts: %w", err)
+	}
+
+	return s, nil
+}
+
+func (s *hyprlandSource) Events() <-chan Event {
+	return s.events
+}
+
+// Pause unregisters every bind and drops the global-shortcuts
+// connection, so no Shift activity reaches this process while paused —
+// the same guarantee evdevSource.Pause gives, required while the
+// session is locked.
+func (s *hyprlandSource) Pause() {
+	s.mu.Lock()
+	if s.paused || s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.paused = true
+	shortcuts := s.shortcuts
+	s.shortcuts = nil
+	s.mu.Unlock()
+
+	if shortcuts != nil {
+		_ = shortcuts.Close()
+	}
+	s.unregisterBinds()
+}
+
+// Resume re-registers every bind and reconnects the global-shortcuts
+// client.
+func (s *hyprlandSource) Resume() {
+	s.mu.Lock()
+	if !s.paused || s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.paused = false
+	s.mu.Unlock()
+
+	if err := s.registerBinds(); err != nil {
+		s.logger.Warn("input: hyprland: resume: register binds", "err", err)
+		return
+	}
+	if err := s.connectShortcuts(); err != nil {
+		s.logger.Warn("input: hyprland: resume: connect global shortcuts", "err", err)
+	}
+}
+
+func (s *hyprlandSource) Close() error {
+	s.closeOnce.Do(func() {
+		s.mu.Lock()
+		s.closed = true
+		shortcuts := s.shortcuts
+		s.shortcuts = nil
+		s.mu.Unlock()
+
+		if shortcuts != nil {
+			_ = shortcuts.Close()
+		}
+		s.unregisterBinds()
+		close(s.events)
+	})
+	return nil
+}
+
+// sendCommand opens a fresh connection to the request socket, writes one
+// command, reads its reply, and closes the connection immediately.
+// Hyprland evaluates a request-socket connection synchronously and holds
+// up compositor input handling for the duration it stays open; issuing
+// one command per connection and closing right after — never reusing a
+// connection across commands — is what keeps that window down at
+// microseconds instead of freezing the compositor.
+func (s *hyprlandSource) sendCommand(cmd string) error {
+	conn, err := s.dial(s.reqPath)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if _, err := conn.Write([]byte(cmd)); err != nil {
+		return err
+	}
+	// The reply is read to completion (and discarded) before returning,
+	// which drains the socket so Hyprland's write side never blocks on
+	// this connection being torn down mid-reply.
+	buf := make([]byte, 4096)
+	for {
+		if _, err := conn.Read(buf); err != nil {
+			break
+		}
+	}
+	return nil
+}
+
+// registerBinds unbinds any stale registration first — hyprctl keyword
+// bindn is not idempotent, so skipping this on every call but the first
+// would accumulate duplicate binds across repeated Resume calls — then
+// issues every bindn/bindrn command needed for the four global
+// shortcuts, stopping at the first failure so a caller sees exactly
+// which one didn't take.
+func (s *hyprlandSource) registerBinds() error {
+	s.unregisterBinds()
+	for _, cmd := range hyprlandBindCommands {
+		if err := s.sendCommand(cmd); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// unregisterBinds is best-effort: an unbind against a key with nothing
+// bound is a harmless no-op, so this runs unconditionally both before
+// every bind (see registerBinds) and from Pause/Close, where a failure
+// has no good recovery beyond logging it.
+func (s *hyprlandSource) unregisterBinds() {
+	for _, cmd := range hyprlandUnbindCommands {
+		if err := s.sendCommand(cmd); err != nil {
+			s.logger.Warn("input: hyprland: unbind", "cmd", cmd, "err", err)
+		}
+	}
+}
+
+func (s *hyprlandSource) connectShortcuts() error {
+	ctx, cancel := context.WithTimeout(context.Background(), gsConnectTimeout)
+	defer cancel()
+
+	shortcuts, err := dialGlobalShortcuts(ctx, s.wlDial, gsShortcutDefs(), s.emit, s.logger)
+	if err != nil {
+		return err
+	}
+
+	s.mu.Lock()
+	if s.closed || s.paused {
+		// A Pause or Close raced this dial to completion — the binds
+		// this connection depends on may already be gone (Close/Pause
+		// unbind under this same lock), and nothing else will ever
+		// call Close on an orphaned client. Tear it down instead of
+		// storing it.
+		s.mu.Unlock()
+		_ = shortcuts.Close()
+		return nil
+	}
+	s.shortcuts = shortcuts
+	s.mu.Unlock()
+	return nil
+}
+
+// emit is the globalShortcutsClient's onEvent callback: it reduces a
+// (slot, pressed) pair into an Event and delivers it, unless this
+// Source has since been paused or closed.
+func (s *hyprlandSource) emit(slot gsShortcutSlot, pressed bool) {
+	s.mu.Lock()
+	closed := s.closed || s.paused
+	s.mu.Unlock()
+	if closed {
+		return
+	}
+
+	code, ok := hyprlandSlotKeyCode(slot)
+	if !ok {
+		return
+	}
+	ev := Event{Kind: KindShift, Code: code, Pressed: pressed, At: time.Now()}
+
+	select {
+	case s.events <- ev:
+	default:
+		// The channel only backs up if nothing is draining Events() at
+		// all; dropping a chord edge here is preferable to blocking the
+		// compositor's own event delivery.
+	}
+}
+
+// hyprlandSlotKeyCode maps a shortcut slot to the evdev key code its
+// Shift side corresponds to. Only the side matters here — press vs.
+// release is carried by the pressed bool a slot's own down/up pairing
+// already encodes.
+func hyprlandSlotKeyCode(slot gsShortcutSlot) (uint16, bool) {
+	switch slot {
+	case gsSlotLDown, gsSlotLUp:
+		return uint16(evdev.KEY_LEFTSHIFT), true
+	case gsSlotRDown, gsSlotRUp:
+		return uint16(evdev.KEY_RIGHTSHIFT), true
+	default:
+		return 0, false
+	}
+}
