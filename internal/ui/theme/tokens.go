@@ -86,13 +86,51 @@ const (
 	SectionRuleGap      = 10
 )
 
-// Toast: the dark global HUD and the light in-panel toast (built in
-// copper-l2z.24 on top of the .toast-dark / .toast-light classes defined
-// here).
+// Toast: the dark global HUD and the light in-panel toast. These are two
+// different widgets, not one widget in two colours — measured frame by
+// frame from the demo (11.0s/13.77s for the dark HUD's position, 40.5s
+// for the light toast's fill, position, and icon). See internal/ui/toast.
 const (
 	ToastHeight = 34
 	ToastRadius = 17
 	ToastPadX   = 16
+
+	// ToastDarkBg is opaque near-black, measured directly off the HUD
+	// fill — deliberately distinct from --ink (#1C1C1E), which is the
+	// panel's body text colour, not this.
+	ToastDarkBg   = "#0B0B0B"
+	ToastDarkText = "#FFFFFF"
+
+	// ToastLightBg is translucent, not the opaque CardBgHover a naive
+	// reading of "light toast" would reach for: frame 40.5s shows the
+	// focus ring and text of the card behind it showing through, so this
+	// is a vibrancy material — paired with ToastLightBlur's
+	// backdrop-filter, not a flat fill.
+	ToastLightBg   = "rgba(255,255,255,.72)"
+	ToastLightBlur = "blur(20px)"
+	ToastLightText = Ink
+
+	// ToastIconSize/ToastIconGap describe the light toast's filled black
+	// circle with a white tick: ~14dp, 8dp before the text. The dark HUD
+	// never has an icon.
+	ToastIconSize = 14
+	ToastIconGap  = 8
+
+	// HUDMarginBottom is how far the dark HUD's layer-shell surface
+	// bottom sits above the output bottom — measured centre x = 961 on a
+	// 1920-wide frame at both 11.0s and 13.77s (i.e. screen-centred
+	// horizontally, achieved by anchoring neither left nor right edge),
+	// ~195dp above the bottom edge.
+	HUDMarginBottom = 195
+
+	// PanelToastGap is the light toast's default clearance above the
+	// panel's bottom edge — measured centre x 1325 vs panel centre 1324
+	// at frame 40.5s, ~20dp above the composer. This is only the
+	// fallback used before the composer exists: the panel assembler
+	// (copper-l2z.26) should call InPanel.SetBottomInset with the
+	// composer's live height plus this gap once that widget exists, so
+	// the toast tracks the composer as it grows.
+	PanelToastGap = 20
 )
 
 // Empty-section placeholder card and the notelist's overlay scrollbar
