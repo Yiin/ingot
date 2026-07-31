@@ -1,0 +1,13 @@
+[Unit]
+Description=Ingot quick-capture panel
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ingot run
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=graphical-session.target

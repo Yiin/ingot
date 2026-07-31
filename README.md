@@ -24,6 +24,10 @@ Ingot is an unofficial reimplementation of [Copper](https://shadcn.com/copper) b
 paru -S ingot
 ```
 
+Or `paru -S ingot-git` to track `main` instead of the latest tagged release. Packaging sources are under [`contrib/`](contrib/): `contrib/PKGBUILD` for `ingot`, `contrib/ingot-git/PKGBUILD` for `ingot-git`. Both install a udev rule (`ingot doctor` explains what it grants), a desktop entry, an icon, and a systemd **user** unit — the unit ships disabled; run `systemctl --user enable --now ingot.service` or `ingot doctor --fix` to turn it on.
+
+A prebuilt binary from GitHub Releases, once one exists, will be dynamically linked against `libgtk-4.so.1`, `libgtk4-layer-shell.so.0` and glibc, so it realistically only serves Arch and Fedora; the AUR package is the tested path.
+
 ### go install
 
 ```
