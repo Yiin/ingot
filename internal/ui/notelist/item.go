@@ -38,6 +38,14 @@ type Item struct {
 	// (not the recycled row widget) because ConnectBind needs it on
 	// every rebind to decide whether to replay the insert animation.
 	Born time.Time
+	// Ranges is the note's active search-match highlight — raw-body
+	// [start, end) byte offsets into Body, in the same coordinates as
+	// searchtext's Hit.Ranges/NoteFilter.Ranges. Set by
+	// internal/ui/search on every query change; empty outside an active
+	// search. bindRow pushes it onto the bound row's Label via
+	// SetHighlight on every bind, and List.RefreshHighlights does the
+	// same for a row that stays bound across a query change.
+	Ranges [][2]int
 
 	kind kind
 	seq  int64 // intra-section order key, assigned by Model

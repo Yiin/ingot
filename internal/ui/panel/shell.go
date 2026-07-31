@@ -5,6 +5,7 @@ import (
 
 	"github.com/Yiin/ingot/internal/ui/composer"
 	"github.com/Yiin/ingot/internal/ui/notelist"
+	"github.com/Yiin/ingot/internal/ui/search"
 	"github.com/Yiin/ingot/internal/ui/searchbar"
 	"github.com/Yiin/ingot/internal/ui/theme"
 	"github.com/Yiin/ingot/internal/ui/toast"
@@ -25,10 +26,11 @@ type Shell struct {
 	root  *gtk.Box
 	stage *gtk.Overlay // list -> [hint, search-empty] overlays
 
-	search   *searchbar.SearchBar
-	list     *notelist.List
-	composer *composer.Composer
-	notifier toast.Notifier
+	search    *searchbar.SearchBar
+	searchCtl *search.Controller
+	list      *notelist.List
+	composer  *composer.Composer
+	notifier  toast.Notifier
 
 	hint             *gtk.Box
 	searchEmpty      *gtk.Box
@@ -59,10 +61,19 @@ func New(sections []notelist.Section, project string, panelToast *toast.InPanel,
 
 	s.search.OnEscapeAtEmpty(func() { s.composer.Focus() })
 
+	s.searchCtl = search.New(s.list)
+	s.search.OnQueryChanged(func(query string) {
+		n := s.searchCtl.Apply(query)
+		s.search.SetMatchCount(n)
+		s.RefreshEmptyState(query, n)
+	})
+
 	s.hint = newHintBlock()
 	s.searchEmpty, s.searchEmptyLabel = newSearchEmptyBlock(func() {
+		// Clear's ConnectChanged fires OnQueryChanged synchronously,
+		// which re-runs the search and refreshes the empty state itself
+		// — no separate call needed here.
 		s.search.Clear()
-		s.RefreshEmptyState("", 0)
 	})
 
 	s.stage = gtk.NewOverlay()

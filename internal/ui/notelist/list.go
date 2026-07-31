@@ -55,6 +55,9 @@ type List struct {
 
 	model *Model
 
+	filter        *gtk.CustomFilter
+	filterModel   *gtk.FilterListModel
+	filterPred    func(it *Item) bool
 	orderSorter   *gtk.CustomSorter
 	sectionSorter *gtk.CustomSorter
 	sort          *gtk.SortListModel
@@ -93,13 +96,17 @@ func New(sections []Section) *List {
 		headers: make(map[uintptr]*headerBinding),
 	}
 
-	// model -> sort model (section sorter + item sorter, same comparator
-	// family, see order.go) -> multi-selection -> list view.
+	// model -> filter model (internal/ui/search's live query, copper-l2z.28)
+	// -> sort model (section sorter + item sorter, same comparator family,
+	// see order.go) -> multi-selection -> list view.
+	l.filter = gtk.NewCustomFilter(l.filterFunc)
+	l.filterModel = gtk.NewFilterListModel(m.ListModel(), &l.filter.Filter)
+
 	l.orderSorter = gtk.NewCustomSorter(sorterFunc(m.compareOrder))
 	l.sectionSorter = gtk.NewCustomSorter(sorterFunc(m.compareSection))
 	m.invalidate = l.invalidateSort
 
-	l.sort = gtk.NewSortListModel(m.ListModel(), &l.orderSorter.Sorter)
+	l.sort = gtk.NewSortListModel(l.filterModel, &l.orderSorter.Sorter)
 	l.sort.SetSectionSorter(&l.sectionSorter.Sorter)
 
 	l.sel = gtk.NewMultiSelection(l.sort)
@@ -217,6 +224,10 @@ func (l *List) SetAnchor(it *Item) {
 	l.repaintSelection()
 }
 
+// Anchor returns the current keyboard-focus anchor within the
+// multi-selection, or nil if none is set.
+func (l *List) Anchor() *Item { return l.anchor }
+
 // ScrollTo scrolls it into view without changing the selection.
 func (l *List) ScrollTo(it *Item) {
 	if pos := l.model.ViewPosition(it); pos >= 0 {
@@ -244,6 +255,39 @@ func (l *List) ConnectToggled(f func(it *Item, done bool)) { l.onToggle = f }
 // ConnectActivate registers f to run when a row is activated (Enter /
 // double-click), real notes only.
 func (l *List) ConnectActivate(f func(it *Item)) { l.onActivate = f }
+
+// SetFilter installs pred as the list's live visibility predicate and
+// re-runs it over every item — internal/ui/search's per-keystroke query
+// recompute, or nil to show everything again (an empty query). pred is
+// never asked about a placeholder card itself: the caller decides a
+// section's visibility (and so its placeholder's) by SectionID instead,
+// since a placeholder carries no note body to match against.
+func (l *List) SetFilter(pred func(it *Item) bool) {
+	l.filterPred = pred
+	l.filter.Changed(gtk.FilterChangeDifferent)
+}
+
+func (l *List) filterFunc(obj *coreglib.Object) bool {
+	if l.filterPred == nil {
+		return true
+	}
+	return l.filterPred(itemModel.ObjectValue(obj))
+}
+
+// RefreshHighlights pushes every bound row's current Item.Ranges onto its
+// Label — the search package's response to a query change for a note
+// that stays visible across it (a plain Splice/filter re-run only
+// notifies GTK about items entering or leaving the filtered set, not
+// about a still-visible item's Ranges changing in place). Mirrors
+// repaintSelection's same iterate-the-recycled-bindings approach.
+func (l *List) RefreshHighlights() {
+	for _, b := range l.rows {
+		if b.item == nil || b.item.IsPlaceholder() {
+			continue
+		}
+		b.row.Label.SetHighlight(b.item.Ranges)
+	}
+}
 
 func (l *List) invalidateSort() {
 	l.orderSorter.Changed(gtk.SorterChangeDifferent)
@@ -332,6 +376,7 @@ func (l *List) bindRow(obj *coreglib.Object) {
 		b.row.SetChecked(false, false) // reset-then-apply kills any in-flight strike
 		b.row.SetChecked(it.Done, false)
 		b.row.Label.SetBody(it.Body)
+		b.row.Label.SetHighlight(it.Ranges)
 
 		// motion.EnableAnimations() gates this even though the visible
 		// wipe itself is CSS (style.css's ingot-row-in @keyframes,
