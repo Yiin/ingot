@@ -105,10 +105,29 @@
 
 .note-card.selected {
   background-color: var(--card-bg-selected);
+  outline-style: solid;
+  outline-width: calc(var(--focus-ring) * 1px);
+  outline-color: var(--accent);
+  outline-offset: 2px;
+  transition: background-color 120ms ease, outline-color 120ms ease;
+}
+
+/* The keyboard-focus anchor within a multi-selection: the original has no
+ * separate affordance for this, so Ingot adds a 1dp inner ring — see
+ * copper-l2z.20. */
+.note-card.selection-anchor {
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .note-card.done {
   color: var(--ink-done);
+}
+
+/* Not shown in the original — copper-l2z.20's own contract for reordering. */
+.note-card.dragging {
+  box-shadow: 0 6px 16px rgba(0,0,0,.18);
+  transform: scale(1.02);
+  opacity: .95;
 }
 
 .section-header {
