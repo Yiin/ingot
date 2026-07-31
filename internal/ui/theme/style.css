@@ -115,6 +115,13 @@
  * margin-top is the 12dp sibling rhythm; GTK does not collapse margins,
  * so .section-header's own margin-bottom is reduced by the same amount
  * so the first card under a header still lands at --section-mb. */
+/* background-color's transition here (not on :hover, below) is what
+ * governs *leaving* hover: CSS applies the transition declared on the
+ * state a property is transitioning INTO, so the base rule's duration is
+ * the "out" half of the hover fill, and :hover's own transition below is
+ * the "in" half — see internal/ui/motion's HoverInDuration/
+ * HoverOutDuration, kept deliberately asymmetric (a longer fade back out
+ * avoids flicker when the pointer crosses the gap between two cards). */
 .note-card {
   background-color: var(--card-bg);
   border-radius: calc(var(--card-radius) * 1px);
@@ -122,7 +129,7 @@
     calc(var(--card-pad-y) * 1px) calc(var(--card-pad-l) * 1px);
   min-height: calc(var(--card-min-h) * 1px);
   margin-top: calc(var(--card-gap) * 1px);
-  transition: background-color 120ms ease;
+  transition: background-color 140ms ease-out;
 }
 
 /* Newly inserted row: opacity, height and padding grow in from nothing so
@@ -154,6 +161,7 @@
 
 .note-card:hover {
   background-color: var(--card-bg-hover);
+  transition: background-color 90ms ease-out;
 }
 
 .note-card.selected {
@@ -162,7 +170,7 @@
   outline-width: calc(var(--focus-ring) * 1px);
   outline-color: var(--focus-ring-color);
   outline-offset: 2px;
-  transition: background-color 120ms ease, outline-color 120ms ease;
+  transition: background-color 120ms ease-out, outline-color 120ms ease-out;
 }
 
 /* The keyboard-focus anchor within a multi-selection: the original has no
@@ -421,12 +429,17 @@ checkbutton check:checked {
   border-color: var(--accent);
 }
 
+/* internal/ui/motion's FocusRingDuration (120ms, ease-out) — the spec's
+ * "opacity 0->1 and width 0->2px" is approximated here as an
+ * outline-color fade, since GTK CSS has no outline opacity and the ring
+ * must never move (only its own presence animates, which a colour fade
+ * already delivers without touching layout). */
 *:focus-visible {
   outline-style: solid;
   outline-width: calc(var(--focus-ring) * 1px);
   outline-color: var(--focus-ring-color);
   outline-offset: 2px;
-  transition: outline-color 150ms ease;
+  transition: outline-color 120ms ease-out;
 }
 
 /* First-run hint and search-no-matches blocks (internal/ui/panel):

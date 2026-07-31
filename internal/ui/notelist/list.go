@@ -7,6 +7,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
+	"github.com/Yiin/ingot/internal/ui/motion"
 	"github.com/Yiin/ingot/internal/ui/theme"
 	"github.com/Yiin/ingot/internal/ui/widget"
 )
@@ -332,7 +333,14 @@ func (l *List) bindRow(obj *coreglib.Object) {
 		b.row.SetChecked(it.Done, false)
 		b.row.Label.SetBody(it.Body)
 
-		if playing, left := justInserted(it.Born, time.Now()); playing {
+		// motion.EnableAnimations() gates this even though the visible
+		// wipe itself is CSS (style.css's ingot-row-in @keyframes,
+		// already free per GTK's own gtk-enable-animations handling):
+		// with animations off, the row must never even carry the class,
+		// so its very first bound frame already shows the resting
+		// layout — see internal/ui/motion's own package doc for why CSS
+		// vs. hand-rolled animations are gated differently.
+		if playing, left := justInserted(it.Born, time.Now()); playing && motion.EnableAnimations() {
 			b.row.AddCSSClass("just-inserted")
 			// GTK CSS has no animation-end signal, so without this timer
 			// the class would replay on the row's next recycle.

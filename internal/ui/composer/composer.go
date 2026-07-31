@@ -11,6 +11,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
+	"github.com/Yiin/ingot/internal/ui/motion"
 	"github.com/Yiin/ingot/internal/ui/theme"
 )
 
@@ -158,6 +159,16 @@ func (c *Composer) animateHeightTo(target int) {
 	if c.tickID != 0 {
 		c.view.RemoveTickCallback(c.tickID)
 		c.tickID = 0
+	}
+
+	// This growth is a natural-size change (SetMinContentHeight), not a
+	// CSS property, so it is driven by hand via AddTickCallback below —
+	// unlike a CSS transition, it does not honour gtk-enable-animations
+	// for free and must check motion.EnableAnimations itself, the same
+	// way internal/ui/widget's checkbox/strikethrough already do.
+	if !motion.EnableAnimations() {
+		c.setContentHeight(target)
+		return
 	}
 
 	c.animStart = c.currentHeight
