@@ -20,6 +20,14 @@ const strikeDuration = 200 * time.Millisecond
 // edge: 42 - card left padding - the checkbox's own width.
 const textGap = 42 - theme.CardPadL - theme.CheckSize
 
+// labelPageName and editorPageName are the two pages of Row's internal
+// stack (see StartEdit in noterow_edit.go): the label's clamped/full
+// markup, and — only while editing — a reused composer.Composer.
+const (
+	labelPageName  = "label"
+	editorPageName = "editor"
+)
+
 // rowState captures the row's independent, combinable visual flags. Hover
 // and keyboard focus are GTK's own :hover/:focus-visible pseudo-classes
 // and need no tracking here; "selected wins over hover" falls out of
@@ -67,7 +75,11 @@ type Row struct {
 	Label    *Label
 
 	strike *gtk.DrawingArea
-	state  rowState
+	// stack holds the label overlay ("label", always present) and, only
+	// while editing, a reused composer.Composer ("editor") — see
+	// StartEdit in noterow_edit.go.
+	stack *gtk.Stack
+	state rowState
 
 	strikeAnimating bool
 	strikeStart     int64
@@ -79,6 +91,10 @@ type Row struct {
 	// item's reset-then-apply bind as a user click and replay the 200ms
 	// strike wipe on every recycle.
 	applying bool
+
+	// editing is non-nil while StartEdit has swapped the label for an
+	// inline composer.Composer — see noterow_edit.go.
+	editing *editState
 }
 
 // NewRow assembles one note card, initially idle and unchecked. A click
@@ -108,10 +124,25 @@ func NewRow() *Row {
 	overlay.SetClipOverlay(strike, false)
 	overlay.SetMeasureOverlay(strike, false)
 
-	box.Append(checkbox)
-	box.Append(overlay)
+	// Vhomogeneous/Hhomogeneous false + InterpolateSize false: the stack
+	// must size itself to whichever page is actually visible, not the
+	// largest of the two — GTK's default homogeneous sizing would
+	// otherwise make every row as tall as an open inline editor even
+	// while showing the plain label. TransitionTypeNone: the label <->
+	// editor swap (StartEdit/endEdit, noterow_edit.go) is instant.
+	stack := gtk.NewStack()
+	stack.SetHExpand(true)
+	stack.SetHhomogeneous(false)
+	stack.SetVhomogeneous(false)
+	stack.SetInterpolateSize(false)
+	stack.SetTransitionType(gtk.StackTransitionTypeNone)
+	stack.AddNamed(overlay, labelPageName)
+	stack.SetVisibleChildName(labelPageName)
 
-	r := &Row{Box: box, Checkbox: checkbox, Label: label, strike: strike}
+	box.Append(checkbox)
+	box.Append(stack)
+
+	r := &Row{Box: box, Checkbox: checkbox, Label: label, strike: strike, stack: stack}
 	strike.SetDrawFunc(r.drawStrike)
 	r.applyCSS()
 
@@ -198,8 +229,29 @@ func (r *Row) SetSelectionAnchor(anchor bool) {
 	r.applyCSS()
 }
 
-// SetExpanded drops (or restores) the 3-line cap on the row's Label.
+// IsExpanded reports whether the row's 3-line cap is currently lifted.
+func (r *Row) IsExpanded() bool { return r.state.expanded }
+
+// SetExpanded drops (or restores) the 3-line cap on the row's Label. A
+// no-op if already in that state (bindRow's own unconditional reset
+// relies on this to skip re-rendering an already-collapsed row on every
+// recycle).
+//
+// This does not animate the row's own height, despite the child spec's
+// 180ms figure: GTK never allocates a plain widget smaller than its
+// children's own natural minimum size, so a SetSizeRequest-driven clip
+// (the technique internal/ui/composer uses for its growing text view)
+// only actually works for the collapse direction — expanding switches
+// the label to its full, unclamped natural size first, which
+// immediately becomes the row's own minimum and defeats the clip before
+// a single frame ticks. A real height animation needs the label to sit
+// inside a genuinely scrollable container (GtkScrolledWindow, the one
+// container that can allocate less than its child's natural size) —
+// out of scope for this row's toggle; left for whoever picks it up.
 func (r *Row) SetExpanded(expanded bool) {
+	if expanded == r.state.expanded {
+		return
+	}
 	r.state.expanded = expanded
 	if expanded {
 		r.Label.Expand()

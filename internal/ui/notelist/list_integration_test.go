@@ -257,3 +257,70 @@ func TestEmptySectionRendersHeaderRuleAndPlaceholder(t *testing.T) {
 		t.Errorf("no visible placeholder card bound for the empty section")
 	}
 }
+
+// TestStartInlineEditSeedsTheBoundRow covers StartInlineEdit's own
+// id -> Item -> Row lookup: it must find the row currently bound to
+// id's item and seed its editor with that item's raw Body. Driving an
+// actual Enter keystroke to reach the commit callback needs a mapped,
+// focused surface — deferred to the headless harness, same as
+// internal/ui/composer's and internal/ui/widget's own integration tests
+// (the commit wiring itself is exercised there, at the Row level,
+// without needing a real keystroke).
+func TestStartInlineEditSeedsTheBoundRow(t *testing.T) {
+	requireDisplay(t)
+
+	l := New([]Section{{ID: "a"}})
+	it := NewItem("1", "a", "original", false)
+	l.Model().Append(it)
+
+	win := gtk.NewWindow()
+	win.SetChild(l)
+	pump()
+
+	l.StartInlineEdit("1")
+
+	b := l.boundRow(it)
+	if b == nil {
+		t.Fatal("no bound row for item \"1\"")
+	}
+	if !b.row.IsEditing() {
+		t.Fatal("row is not in edit mode after StartInlineEdit")
+	}
+
+	// A no-op for an id with no item, or an item with no bound (on-
+	// screen) row, must not panic.
+	l.StartInlineEdit("missing")
+}
+
+// TestSetExpandedAndToggleExpanded covers "Expand removes the 3-line cap
+// and collapse restores it" at the notelist level.
+func TestSetExpandedAndToggleExpanded(t *testing.T) {
+	requireDisplay(t)
+
+	l := New([]Section{{ID: "a"}})
+	it := NewItem("1", "a", "a note", false)
+	l.Model().Append(it)
+
+	win := gtk.NewWindow()
+	win.SetChild(l)
+	pump()
+
+	b := l.boundRow(it)
+	if b == nil {
+		t.Fatal("no bound row for item \"1\"")
+	}
+
+	l.SetExpanded("1", true)
+	if !b.row.IsExpanded() {
+		t.Error("row is not expanded after SetExpanded(\"1\", true)")
+	}
+
+	l.ToggleExpanded("1")
+	if b.row.IsExpanded() {
+		t.Error("row is still expanded after ToggleExpanded")
+	}
+
+	// A no-op for an id with no bound row must not panic.
+	l.SetExpanded("missing", true)
+	l.ToggleExpanded("missing")
+}

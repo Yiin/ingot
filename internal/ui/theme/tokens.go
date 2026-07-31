@@ -172,3 +172,22 @@ const (
 	FontFamily       = `"Inter", "Adwaita Sans", "Cantarell", sans-serif`
 	InlineBoldWeight = 600
 )
+
+// Note editor window (internal/ui/editorwindow): an ordinary toplevel
+// GtkWindow, not a layer-shell surface, so the compositor tiles and
+// focuses it like any other window. Not shown in the demo (the whole
+// window model, including its existence, is Ingot's own contract for
+// long notes) — chosen so the editor comfortably fits the panel's own
+// note-card typography at roughly panel-width-plus-a-margin.
+const (
+	EditorWidth   = 520
+	EditorHeight  = 420
+	EditorPadding = 20
+	EditorFont    = 15
+	EditorLine    = 22
+
+	// EditorSaveDebounceMs is how long the editor waits after the last
+	// keystroke before persisting; a close always flushes immediately
+	// regardless of how much of this window has elapsed.
+	EditorSaveDebounceMs = 400
+)

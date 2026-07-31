@@ -58,6 +58,13 @@ type Composer struct {
 
 	project string
 
+	// placeholderDisabled is DisablePlaceholder's own flag: the bottom
+	// composer is genuinely idle-and-inviting when empty, but
+	// copper-l2z.27's reused inline row editor is not — an empty buffer
+	// there is a mid-edit accident (select all, delete), not a resting
+	// state that should say "Add a note or a prompt ()".
+	placeholderDisabled bool
+
 	onCommit        func(text string)
 	onHeightChanged func(height int)
 
@@ -135,6 +142,19 @@ func (c *Composer) SetText(text string) { c.buffer.SetText(text) }
 // Focus grabs keyboard focus into the text view.
 func (c *Composer) Focus() { c.view.GrabFocus() }
 
+// View exposes the underlying GtkTextView. The top-level composer has
+// no need for this itself; it exists for copper-l2z.27's inline row
+// editing, which reuses Composer wholesale but still needs to attach
+// its own Escape-cancels key controller on top of it.
+func (c *Composer) View() *gtk.TextView { return c.view }
+
+// DisablePlaceholder permanently hides the placeholder for this
+// instance, regardless of buffer emptiness — see placeholderDisabled.
+func (c *Composer) DisablePlaceholder() {
+	c.placeholderDisabled = true
+	c.placeholder.SetVisible(false)
+}
+
 // OnCommit registers f to be called with the trimmed text every time the
 // composer commits (plain Enter or Ctrl+Enter).
 func (c *Composer) OnCommit(f func(text string)) { c.onCommit = f }
@@ -146,8 +166,10 @@ func (c *Composer) OnCommit(f func(text string)) { c.onCommit = f }
 func (c *Composer) OnHeightChanged(f func(height int)) { c.onHeightChanged = f }
 
 func (c *Composer) handleTextChanged() {
-	empty := c.buffer.CharCount() == 0
-	c.placeholder.SetVisible(empty)
+	if !c.placeholderDisabled {
+		empty := c.buffer.CharCount() == 0
+		c.placeholder.SetVisible(empty)
+	}
 	c.animateHeightTo(targetHeight(c.buffer.LineCount()))
 }
 
