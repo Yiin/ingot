@@ -1,0 +1,204 @@
+/* Ingot panel stylesheet.
+ *
+ * Values here must match internal/ui/theme/tokens.go exactly (see
+ * theme_test.go's golden test) — tokens.go is the source of truth, this
+ * file is what actually ships to gtk.CSSProvider.LoadFromString.
+ *
+ * GTK 4.22 CSS support, verified by running code:
+ *   Supported: custom properties, transition, @keyframes, box-shadow,
+ *     border-radius, filter, backdrop-filter, opacity, transform, calc,
+ *     gradients, outline, :focus-visible, letter-spacing, text-shadow,
+ *     font-feature-settings, line-height.
+ *   Rejected (each logs "No property named ..." — do not re-add them):
+ *     display, position, top, z-index, cursor, will-change, overflow,
+ *     aspect-ratio.
+ *
+ * Never connect gtk.CSSProvider.ConnectParsingError — gotk4 v0.4.0
+ * double-frees the borrowed GError and the process aborts with
+ * "free(): invalid pointer". GTK already emits every parse error as a WARN
+ * "Theme parser error" line through gotk4's slog bridge; the tests in this
+ * package assert on that instead.
+ */
+
+:root {
+  --panel-w: 360;
+  --panel-h: 640;
+  --panel-margin-edge: 12;
+  --panel-radius: 32;
+  --panel-bg: #E5E6E9;
+  --panel-rim: rgba(255,255,255,.40);
+  --content-inset: 15;
+  --panel-shadow: 0 8px 28px rgba(0,0,0,.20), 0 2px 8px rgba(0,0,0,.08);
+  --panel-pad-top: 16;
+  --panel-pad-bottom: 15;
+
+  --card-bg: #F8F8F6;
+  --card-bg-hover: #FFFFFF;
+  --card-bg-selected: #EFF6FF;
+  --card-radius: 16;
+  --card-pad-y: 8;
+  --card-pad-l: 12;
+  --card-pad-r: 14;
+  --card-gap: 12;
+  --card-min-h: 34;
+
+  --field-bg: #F3F4F7;
+  --search-h: 30;
+  --search-radius: 15;
+  --overflow-btn: 30;
+  --search-gap: 8;
+  --composer-min-h: 58;
+
+  --font-body: 14;
+  --line-body: 18;
+  --font-section: 11;
+  --tracking-section: 0.07em;
+  --font-toast: 14;
+
+  --ink: #1C1C1E;
+  --ink-muted: #6E7073;
+  --ink-done: #6E6E73;
+  --rule: rgba(0,0,0,.08);
+
+  --check-size: 17;
+  --check-stroke: 1.5;
+  --check-ring: #7A7A7C;
+  --accent: #0A6CFF;
+  --focus-ring: 2;
+
+  --section-mt: 21;
+  --section-mb: 21;
+  --section-inset: 11;
+  --section-rule-gap: 10;
+
+  --toast-h: 34;
+  --toast-radius: 17;
+  --toast-pad-x: 16;
+}
+
+/* The panel: opaque, no backdrop-filter — see the header comment above. */
+.ingot-panel {
+  background-color: var(--panel-bg);
+  border-radius: calc(var(--panel-radius) * 1px);
+  box-shadow: var(--panel-shadow), inset 0 1px 0 var(--panel-rim);
+  padding: calc(var(--panel-pad-top) * 1px) calc(var(--content-inset) * 1px)
+    calc(var(--panel-pad-bottom) * 1px) calc(var(--content-inset) * 1px);
+  font-size: calc(var(--font-body) * 1px);
+  line-height: calc(var(--line-body) / var(--font-body));
+  color: var(--ink);
+}
+
+/* Note card: warm surface, no drop shadow (measured fact — see header). */
+.note-card {
+  background-color: var(--card-bg);
+  border-radius: calc(var(--card-radius) * 1px);
+  padding: calc(var(--card-pad-y) * 1px) calc(var(--card-pad-r) * 1px)
+    calc(var(--card-pad-y) * 1px) calc(var(--card-pad-l) * 1px);
+  min-height: calc(var(--card-min-h) * 1px);
+  transition: background-color 120ms ease;
+  animation: ingot-row-in 160ms ease-out;
+}
+
+.note-card:hover {
+  background-color: var(--card-bg-hover);
+}
+
+.note-card.selected {
+  background-color: var(--card-bg-selected);
+}
+
+.note-card.done {
+  color: var(--ink-done);
+}
+
+.section-header {
+  margin-top: calc(var(--section-mt) * 1px);
+  margin-bottom: calc(var(--section-mb) * 1px);
+  padding-left: calc(var(--section-inset) * 1px);
+  padding-right: calc(var(--section-inset) * 1px);
+  font-size: calc(var(--font-section) * 1px);
+  font-weight: 600;
+  letter-spacing: var(--tracking-section);
+  color: var(--ink-muted);
+}
+
+.section-rule {
+  background-color: var(--rule);
+  margin-top: calc(var(--section-rule-gap) * 1px);
+}
+
+/* Search field and composer: cool surface, deliberately distinct from the
+ * warm note card above. */
+.search-field {
+  background-color: var(--field-bg);
+  border-radius: calc(var(--search-radius) * 1px);
+  min-height: calc(var(--search-h) * 1px);
+  padding-left: calc(var(--card-pad-l) * 1px);
+  padding-right: calc(var(--search-gap) * 1px);
+}
+
+.composer {
+  background-color: var(--field-bg);
+  border-radius: calc(var(--card-radius) * 1px);
+  min-height: calc(var(--composer-min-h) * 1px);
+  padding: calc(var(--card-pad-y) * 1px) calc(var(--card-pad-r) * 1px);
+}
+
+.toast-dark,
+.toast-light {
+  min-height: calc(var(--toast-h) * 1px);
+  border-radius: calc(var(--toast-radius) * 1px);
+  padding-left: calc(var(--toast-pad-x) * 1px);
+  padding-right: calc(var(--toast-pad-x) * 1px);
+  font-size: calc(var(--font-toast) * 1px);
+  transition: opacity 160ms ease;
+}
+
+/* The dark global HUD, shown outside the panel over the desktop. */
+.toast-dark {
+  background-color: var(--ink);
+  color: #FFFFFF;
+}
+
+/* The light in-panel toast, matching the panel's own surfaces. */
+.toast-light {
+  background-color: var(--card-bg-hover);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+
+/* The circular checkbox ring; checkbutton's internal CSS node is "check". */
+checkbutton check {
+  min-width: calc(var(--check-size) * 1px);
+  min-height: calc(var(--check-size) * 1px);
+  border-radius: calc(var(--check-size) * 1px);
+  border-style: solid;
+  border-width: calc(var(--check-stroke) * 1px);
+  border-color: var(--check-ring);
+  background-color: transparent;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+checkbutton check:checked {
+  background-color: var(--accent);
+  border-color: var(--accent);
+}
+
+*:focus-visible {
+  outline-style: solid;
+  outline-width: calc(var(--focus-ring) * 1px);
+  outline-color: var(--accent);
+  outline-offset: 2px;
+  transition: outline-color 150ms ease;
+}
+
+@keyframes ingot-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
