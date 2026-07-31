@@ -1,0 +1,12 @@
+version: "2"
+
+linters:
+  default: standard
+  settings:
+    govet:
+      # gotk4's idiom for getting a C pointer from a widget converts
+      # Native()'s uintptr to unsafe.Pointer (see internal/layershell).
+      # govet's unsafeptr check flags that as misuse; `make vet` disables
+      # the same check via `go vet -unsafeptr=false`.
+      disable:
+        - unsafeptr
