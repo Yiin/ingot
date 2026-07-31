@@ -31,6 +31,17 @@ func SafeCollapsed(body string) string {
 	return validate(Collapsed(body), body)
 }
 
+// SafeHighlighted is Safe plus FullHighlighted's search-match highlighting.
+func SafeHighlighted(body string, ranges [][2]int) string {
+	return validate(FullHighlighted(body, ranges), body)
+}
+
+// SafeCollapsedHighlighted is SafeCollapsed plus FullHighlighted's
+// search-match highlighting.
+func SafeCollapsedHighlighted(body string, ranges [][2]int) string {
+	return validate(CollapsedHighlighted(body, ranges), body)
+}
+
 func validate(markup, body string) string {
 	if _, _, _, err := pango.ParseMarkup(anchorTag.ReplaceAllString(markup, ""), 0); err != nil {
 		return escapeText(body)

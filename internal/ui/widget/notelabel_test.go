@@ -8,7 +8,7 @@ import (
 )
 
 func TestClampedMarkupTrimsTrailingWhitespace(t *testing.T) {
-	got := clampedMarkup("captured text\n\n\n")
+	got := clampedMarkup("captured text\n\n\n", nil)
 	want := mdpango.SafeCollapsed("captured text")
 	if got != want {
 		t.Errorf("clampedMarkup with trailing blank lines = %q, want %q", got, want)
@@ -23,14 +23,14 @@ func TestClampedMarkupNeverContainsNewline(t *testing.T) {
 		"```\ncode line one\ncode line two\n```",
 	}
 	for _, body := range bodies {
-		if got := clampedMarkup(body); strings.Contains(got, "\n") {
+		if got := clampedMarkup(body, nil); strings.Contains(got, "\n") {
 			t.Errorf("clampedMarkup(%q) = %q, contains a newline", body, got)
 		}
 	}
 }
 
 func TestClampedMarkupPreservesInlineFormatting(t *testing.T) {
-	got := clampedMarkup("**bold**")
+	got := clampedMarkup("**bold**", nil)
 	want := "<b>bold</b>"
 	if got != want {
 		t.Errorf("clampedMarkup(%q) = %q, want %q", "**bold**", got, want)
