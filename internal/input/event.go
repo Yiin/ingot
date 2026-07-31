@@ -41,3 +41,17 @@ type Source interface {
 	Events() <-chan Event
 	Close() error
 }
+
+// Pauser is implemented by a Source that can stop reading its underlying
+// devices entirely, rather than merely filtering already-read events.
+// internal/session uses it to guarantee no evdev reads happen while the
+// desktop session is locked — a security requirement, not an
+// optimization, since Ingot holds every keyboard device open.
+type Pauser interface {
+	// Pause stops all device reads until Resume. It does not close the
+	// Source or its Events channel, and is safe to call repeatedly.
+	Pause()
+	// Resume restarts device reads after Pause. Calling it without a
+	// prior Pause is a no-op.
+	Resume()
+}

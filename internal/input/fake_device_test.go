@@ -20,6 +20,7 @@ type fakeDevice struct {
 
 	mu          sync.Mutex
 	closeCalled bool
+	reads       int
 }
 
 func newFakeDevice(codes ...evdev.EvCode) *fakeDevice {
@@ -38,6 +39,10 @@ func (f *fakeDevice) CapableEvents(t evdev.EvType) []evdev.EvCode {
 }
 
 func (f *fakeDevice) ReadOne() (*evdev.InputEvent, error) {
+	f.mu.Lock()
+	f.reads++
+	f.mu.Unlock()
+
 	select {
 	case ev, ok := <-f.ch:
 		if !ok {
@@ -47,6 +52,12 @@ func (f *fakeDevice) ReadOne() (*evdev.InputEvent, error) {
 	case <-f.closed:
 		return nil, os.ErrClosed
 	}
+}
+
+func (f *fakeDevice) readCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.reads
 }
 
 func (f *fakeDevice) NonBlock() error {

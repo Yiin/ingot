@@ -44,9 +44,13 @@ type evdevSource struct {
 
 	mu      sync.Mutex
 	devices map[string]*deviceHandle
+	paused  bool
+	closed  bool
 
 	closeOnce sync.Once
 }
+
+var _ Pauser = (*evdevSource)(nil)
 
 // NewSource opens every /dev/input/event* device whose EV_KEY capabilities
 // include a Shift key or the left mouse button, and watches for devices
@@ -101,8 +105,43 @@ func (s *evdevSource) Events() <-chan Event {
 	return s.events
 }
 
+// Pause closes every currently open device, which unblocks each
+// device's pending read and stops its goroutine — the same path an
+// unplug takes — and marks the source paused so a hotplug rescan racing
+// with Pause does not reopen a device behind the caller's back.
+func (s *evdevSource) Pause() {
+	s.mu.Lock()
+	if s.paused {
+		s.mu.Unlock()
+		return
+	}
+	s.paused = true
+	s.mu.Unlock()
+
+	s.closeAllDevices()
+}
+
+// Resume clears the paused flag and rescans, reopening every device that
+// still matches the chord capability filter — the same path startup
+// takes.
+func (s *evdevSource) Resume() {
+	s.mu.Lock()
+	if !s.paused {
+		s.mu.Unlock()
+		return
+	}
+	s.paused = false
+	s.mu.Unlock()
+
+	s.rescan()
+}
+
 func (s *evdevSource) Close() error {
 	s.closeOnce.Do(func() {
+		s.mu.Lock()
+		s.closed = true
+		s.mu.Unlock()
+
 		close(s.stopCh)
 		_ = s.inotifyFile.Close()
 		s.wg.Wait()
@@ -112,8 +151,22 @@ func (s *evdevSource) Close() error {
 }
 
 // rescan lists the watched directory, opens and filters newly appeared
-// devices, and drops tracked devices whose node disappeared.
+// devices, and drops tracked devices whose node disappeared. It is a
+// no-op while paused or after Close: a hotplug event arriving mid-lock
+// must not reopen a device behind Pause's back, and Resume must not
+// spawn a read goroutine or a wg.Add after Close's wg.Wait has already
+// returned. The check here is only a fast path to skip the directory
+// read; the check that actually matters is the one immediately before
+// each device is added to s.devices below, which is what closes the
+// race against a concurrent Pause or Close.
 func (s *evdevSource) rescan() {
+	s.mu.Lock()
+	skip := s.paused || s.closed
+	s.mu.Unlock()
+	if skip {
+		return
+	}
+
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
 		s.logger.Warn("input: read device dir", "dir", s.dir, "err", err)
@@ -159,10 +212,20 @@ func (s *evdevSource) rescan() {
 
 		h := &deviceHandle{path: path, dev: dev}
 		s.mu.Lock()
+		// Re-check under the lock: Pause or Close may have run since the
+		// fast-path check above, in which case this device must not be
+		// tracked or read. wg.Add happens in the same critical section as
+		// this check so it can never land after Close's wg.Wait has
+		// already observed zero and returned.
+		if s.paused || s.closed {
+			s.mu.Unlock()
+			_ = dev.Close()
+			continue
+		}
 		s.devices[path] = h
+		s.wg.Add(1)
 		s.mu.Unlock()
 
-		s.wg.Add(1)
 		go s.readDevice(h)
 	}
 
