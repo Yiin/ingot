@@ -24,6 +24,13 @@
 #     WLR_RENDERER=pixman drive sway itself; GSK_RENDERER=cairo drives the
 #     GTK client under test. Both are pure software: no GPU, no /dev/dri,
 #     no privileged container needed.
+#   - sway is a tiling compositor: a bare xdg_toplevel test window (as
+#     opposed to Ingot's own layer-shell overlay surface, which sway
+#     never tiles) gets auto-tiled to fill the whole output, silently
+#     overriding whatever size the test asked for via SetDefaultSize —
+#     measured via copper-l2z.80 (a plain window requesting 360x220 came
+#     back allocated at 1052px tall). The floating rule below makes every
+#     such test window keep the size it actually requested.
 set -euo pipefail
 
 if ! command -v sway >/dev/null 2>&1; then
@@ -69,6 +76,7 @@ chmod +x "$run_script"
 
 cat >"$sway_config" <<EOF
 output HEADLESS-1 mode 1920x1080
+for_window [title=".*"] floating enable
 exec $run_script
 EOF
 

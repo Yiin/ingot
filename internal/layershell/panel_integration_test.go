@@ -22,6 +22,7 @@ package layershell
 import (
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -133,6 +134,13 @@ func TestShowHide_TogglesVisibility(t *testing.T) {
 // showing then hiding the panel must hand focus back to the sink without
 // the panel ever calling any focus save/restore API — see Panel.Hide's
 // doc comment.
+//
+// Every step needs the main context pumped before the next: Show/Hide
+// only flip the GDK "visible" property, and the actual map, focus
+// hand-off, unmap and focus hand-back are all async round trips with the
+// compositor — asserting immediately after a call races them. Same
+// pumpUntil/skip-on-no-activation idiom as
+// internal/ui/toast's TestHUD_ShowStealsNoFocus.
 func TestFocusReturnsToPreviousToplevelOnHide(t *testing.T) {
 	requireDisplay(t)
 	requireLayerShell(t)
@@ -140,6 +148,11 @@ func TestFocusReturnsToPreviousToplevelOnHide(t *testing.T) {
 	sink := gtk.NewWindow()
 	sink.SetTitle("layershell-test-sink")
 	sink.SetVisible(true)
+	pumpUntil(5*time.Second, sink.IsActive)
+
+	if !sink.IsActive() {
+		t.Skip("sink window never activated in this harness; cannot assert it regains focus")
+	}
 
 	win := gtk.NewWindow()
 	p, err := New(win, DefaultConfig(), nil)
@@ -148,9 +161,12 @@ func TestFocusReturnsToPreviousToplevelOnHide(t *testing.T) {
 	}
 
 	p.Show()
-	p.Hide()
+	if !pumpUntil(5*time.Second, win.Mapped) {
+		t.Fatal("panel window did not map within 5s")
+	}
 
-	if !sink.IsActive() {
+	p.Hide()
+	if !pumpUntil(5*time.Second, sink.IsActive) {
 		t.Error("sink window did not regain focus after the panel was hidden")
 	}
 }
