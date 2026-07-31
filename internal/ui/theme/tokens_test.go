@@ -69,6 +69,11 @@ func TestTokensMatchSpec(t *testing.T) {
 		{"ToastHeight", theme.ToastHeight, 34},
 		{"ToastRadius", theme.ToastRadius, 17},
 		{"ToastPadX", theme.ToastPadX, 16},
+
+		{"PlaceholderBorder", theme.PlaceholderBorder, "rgba(0,0,0,.12)"},
+		{"ScrollbarWidth", theme.ScrollbarWidth, 5},
+		{"ScrollbarInset", theme.ScrollbarInset, 3},
+		{"ScrollbarInk", theme.ScrollbarInk, "rgba(0,0,0,.28)"},
 	}
 
 	for _, tt := range tests {

@@ -74,6 +74,11 @@
   --toast-h: 34;
   --toast-radius: 17;
   --toast-pad-x: 16;
+
+  --placeholder-border: rgba(0,0,0,.12);
+  --scrollbar-w: 5;
+  --scrollbar-inset: 3;
+  --scrollbar-ink: rgba(0,0,0,.28);
 }
 
 /* The panel: opaque, no backdrop-filter — see the header comment above. */
@@ -88,15 +93,45 @@
   color: var(--ink);
 }
 
-/* Note card: warm surface, no drop shadow (measured fact — see header). */
+/* Note card: warm surface, no drop shadow (measured fact — see header).
+ * margin-top is the 12dp sibling rhythm; GTK does not collapse margins,
+ * so .section-header's own margin-bottom is reduced by the same amount
+ * so the first card under a header still lands at --section-mb. */
 .note-card {
   background-color: var(--card-bg);
   border-radius: calc(var(--card-radius) * 1px);
   padding: calc(var(--card-pad-y) * 1px) calc(var(--card-pad-r) * 1px)
     calc(var(--card-pad-y) * 1px) calc(var(--card-pad-l) * 1px);
   min-height: calc(var(--card-min-h) * 1px);
+  margin-top: calc(var(--card-gap) * 1px);
   transition: background-color 120ms ease;
-  animation: ingot-row-in 160ms ease-out;
+}
+
+/* Newly inserted row: opacity, height and padding grow in from nothing so
+ * the card visibly pushes its neighbours down. Gated by the class, not
+ * applied to .note-card unconditionally — the row widget recycles, and an
+ * unconditional animation would replay on every scroll-driven rebind. The
+ * "to" keyframe ends exactly on the card's resting geometry so the
+ * animation is invisible at completion. */
+@keyframes ingot-row-in {
+  from {
+    opacity: 0;
+    min-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    margin-top: 0;
+  }
+  to {
+    opacity: 1;
+    min-height: calc(var(--card-min-h) * 1px);
+    padding-top: calc(var(--card-pad-y) * 1px);
+    padding-bottom: calc(var(--card-pad-y) * 1px);
+    margin-top: calc(var(--card-gap) * 1px);
+  }
+}
+
+.note-card.just-inserted {
+  animation: ingot-row-in 180ms cubic-bezier(.2, 0, 0, 1) 1;
 }
 
 .note-card:hover {
@@ -130,20 +165,82 @@
   opacity: .95;
 }
 
+/* margin-bottom is --section-mb minus --card-gap: the first card under a
+ * header carries its own margin-top (--card-gap) and GTK does not
+ * collapse margins, so this keeps the header-to-card gap at --section-mb. */
 .section-header {
   margin-top: calc(var(--section-mt) * 1px);
-  margin-bottom: calc(var(--section-mb) * 1px);
+  margin-bottom: calc((var(--section-mb) - var(--card-gap)) * 1px);
   padding-left: calc(var(--section-inset) * 1px);
   padding-right: calc(var(--section-inset) * 1px);
   font-size: calc(var(--font-section) * 1px);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: var(--tracking-section);
   color: var(--ink-muted);
 }
 
+/* The hairline itself is drawn in cairo (internal/ui/notelist), centred
+ * on the section title's cap height — no background-color here, or the
+ * DrawingArea's full allocation (label-height tall, the rest of the
+ * header's width) paints a solid --rule-coloured band behind it.
+ * margin-left is the 10dp gap after the text — a horizontal offset, not
+ * a vertical one. */
 .section-rule {
-  background-color: var(--rule);
-  margin-top: calc(var(--section-rule-gap) * 1px);
+  margin-left: calc(var(--section-rule-gap) * 1px);
+}
+
+/* The scrolling note list: transparent background, its own content
+ * inset (the overlay scrollbar sits inside this, not inside
+ * .ingot-panel's padding), and Adwaita's row/selection chrome stripped
+ * since .note-card paints its own selection state. */
+.ingot-notelist {
+  background: none;
+  padding-left: calc(var(--content-inset) * 1px);
+  padding-right: calc(var(--content-inset) * 1px);
+}
+
+.ingot-notelist > row,
+.ingot-notelist > row:selected,
+.ingot-notelist > row:hover {
+  padding: 0;
+  background-color: transparent;
+  background-image: none;
+}
+
+/* Empty-section placeholder: dashed outline, reorderable/drop-targetable
+ * but not a real note. */
+.note-placeholder {
+  min-height: calc(var(--card-min-h) * 1px);
+  margin-top: calc(var(--card-gap) * 1px);
+  border-radius: calc(var(--card-radius) * 1px);
+  border-style: dashed;
+  border-width: 1px;
+  border-color: var(--placeholder-border);
+  color: var(--ink-muted);
+}
+
+/* The overlay scrollbar: fades in fast, holds, fades out slow after the
+ * last scroll — internal/ui/notelist toggles .scrolling. */
+.ingot-scrollbar {
+  min-width: calc(var(--scrollbar-w) * 1px);
+  margin-right: calc(var(--scrollbar-inset) * 1px);
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+
+.ingot-scrollbar.scrolling {
+  opacity: 1;
+  transition: opacity 80ms ease;
+}
+
+.ingot-scrollbar trough {
+  background: none;
+}
+
+.ingot-scrollbar slider {
+  background-color: var(--scrollbar-ink);
+  border-radius: calc(var(--scrollbar-w) * 1px);
+  min-width: calc(var(--scrollbar-w) * 1px);
 }
 
 /* Search field and composer: cool surface, deliberately distinct from the
@@ -209,15 +306,4 @@ checkbutton check:checked {
   outline-color: var(--accent);
   outline-offset: 2px;
   transition: outline-color 150ms ease;
-}
-
-@keyframes ingot-row-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }

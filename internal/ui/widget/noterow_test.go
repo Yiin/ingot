@@ -68,3 +68,15 @@ func TestTextGapLandsColumnAt42dp(t *testing.T) {
 		t.Errorf("card-pad-l + checkbox width + textGap = %d, want 42", got)
 	}
 }
+
+// TestCheckboxToggledSuppressedWhileApplying guards against the strike
+// animation replaying on every recycled-row bind: SetChecked drives the
+// checkbox programmatically, and checkboxToggled (the click handler) must
+// not treat that as a user click while applying is set.
+func TestCheckboxToggledSuppressedWhileApplying(t *testing.T) {
+	r := &Row{applying: true}
+	r.checkboxToggled(true) // must not touch r.state or any widget
+	if r.state.done {
+		t.Errorf("checkboxToggled set done=true while applying, want no-op")
+	}
+}

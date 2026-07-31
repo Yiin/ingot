@@ -95,6 +95,17 @@ const (
 	ToastPadX   = 16
 )
 
+// Empty-section placeholder card and the notelist's overlay scrollbar
+// (internal/ui/notelist). ScrollbarInk is a contract value, not a
+// measurement — like .dragging, the original has no comparable affordance
+// to measure against.
+const (
+	PlaceholderBorder = "rgba(0,0,0,.12)"
+	ScrollbarWidth    = 5
+	ScrollbarInset    = 3
+	ScrollbarInk      = "rgba(0,0,0,.28)"
+)
+
 // Font stack, closest metric match to SF Pro Text for cap height, x-height
 // and leading. Inline bold is weight 600 (SF's bold-in-text), not 700.
 const (
