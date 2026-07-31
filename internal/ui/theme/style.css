@@ -253,6 +253,11 @@
   padding: 0;
   background-color: transparent;
   background-image: none;
+  /* Adwaita's default row:selected chrome also sets a light foreground
+   * color, which is inherited and would otherwise cascade into the
+   * GtkLabel inside .note-card.selected — reset it since .note-card
+   * paints its own selection background, not the row's. */
+  color: var(--ink);
 }
 
 /* Empty-section placeholder: dashed outline, reorderable/drop-targetable

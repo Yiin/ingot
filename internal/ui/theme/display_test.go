@@ -112,3 +112,51 @@ func TestBodyLabelLineHeight(t *testing.T) {
 		t.Errorf("body label line height = %dpx, want %dpx", height, theme.LineBody)
 	}
 }
+
+// TestSelectedRowLabelColorMatchesInk guards copper-l2z.67: Adwaita's
+// default row:selected chrome sets a light foreground colour that
+// inherits down into a child GtkLabel, which would otherwise render
+// near-white on .note-card.selected's light-blue background. A
+// GtkListBoxRow's CSS node is named "row" like a GtkListView's recycled
+// item, so it reproduces the same cascade .ingot-notelist > row:selected
+// resets against.
+func TestSelectedRowLabelColorMatchesInk(t *testing.T) {
+	display := requireDisplay(t)
+	if err := theme.Load(display); err != nil {
+		t.Fatalf("theme.Load: %v", err)
+	}
+
+	list := gtk.NewListBox()
+	list.AddCSSClass("ingot-notelist")
+	list.SetSelectionMode(gtk.SelectionSingle)
+
+	label := gtk.NewLabel("Note body")
+	card := gtk.NewBox(gtk.OrientationVertical, 0)
+	card.AddCSSClass("note-card")
+	card.AddCSSClass("selected")
+	card.Append(label)
+
+	list.Append(card)
+
+	win := gtk.NewWindow()
+	win.SetChild(list)
+
+	row := list.RowAtIndex(0)
+	if row == nil {
+		t.Fatal("ListBox has no row at index 0")
+	}
+	list.SelectRow(row)
+	if !row.IsSelected() {
+		t.Fatal("row did not report itself selected after SelectRow")
+	}
+
+	var want gdk.RGBA
+	if !want.Parse(theme.Ink) {
+		t.Fatalf("gdk.RGBA.Parse(%q) failed", theme.Ink)
+	}
+
+	got := label.StyleContext().Color()
+	if !got.Equal(&want) {
+		t.Errorf("selected note label color = %s, want %s (--ink)", got.String(), want.String())
+	}
+}
