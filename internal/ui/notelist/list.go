@@ -71,6 +71,14 @@ type List struct {
 
 	rows    map[uintptr]*rowBinding
 	headers map[uintptr]*headerBinding
+	// rowWidgets indexes the same live bindings as rows, but by the row
+	// widget's own GObject identity (coreglib.BaseObject(b.row).Native())
+	// rather than the recycled ListItem's — RowAt walks up from
+	// gtk.Widget.Pick's result through the widget's ancestors, which
+	// passes through the row widget itself, never the private
+	// GtkListItemWidget wrapper GTK parents it under, so this is the map
+	// that lookup actually needs.
+	rowWidgets map[uintptr]*rowBinding
 
 	anchor *Item
 
@@ -91,9 +99,10 @@ func New(sections []Section) *List {
 	m := NewModel(sections)
 
 	l := &List{
-		model:   m,
-		rows:    make(map[uintptr]*rowBinding),
-		headers: make(map[uintptr]*headerBinding),
+		model:      m,
+		rows:       make(map[uintptr]*rowBinding),
+		headers:    make(map[uintptr]*headerBinding),
+		rowWidgets: make(map[uintptr]*rowBinding),
 	}
 
 	// model -> filter model (internal/ui/search's live query, copper-l2z.28)
@@ -210,10 +219,111 @@ func (l *List) Selected() []*Item {
 func (l *List) SelectItems(items []*Item) {
 	l.sel.UnselectAll()
 	for _, it := range items {
-		if pos := l.model.ViewPosition(it); pos >= 0 {
+		if pos := l.ViewPositionOf(it); pos >= 0 {
 			l.sel.SelectItem(uint(pos), false)
 		}
 	}
+}
+
+// ViewLen returns the number of rows currently in sorted (displayed)
+// order, including any placeholder — the same coordinate space
+// ItemAtViewPosition and RowAt use.
+func (l *List) ViewLen() int { return int(l.sel.NItems()) }
+
+// ViewPositionOf returns it's position in l.sel — the list's actual
+// current displayed order — or -1 if it is not currently visible
+// (filtered out by SetFilter, or not in the model at all).
+//
+// This is deliberately NOT Model.ViewPosition: that method computes a
+// position over the model's full, unfiltered base order, blind to
+// whatever predicate SetFilter currently has installed. With no filter
+// active the two agree, but with one active they diverge — Model.
+// ViewPosition would return an index that means something different in
+// l.sel's own (filtered) numbering, silently pointing every caller here
+// at the wrong row. A linear scan is the only way to answer this
+// correctly against the live GtkSelectionModel; it costs the same O(n)
+// Model.ViewPosition's own linear scan already does, over the same
+// (recycled-widget-bounded, not model-sized) live count in practice.
+func (l *List) ViewPositionOf(it *Item) int {
+	n := l.sel.NItems()
+	for i := uint(0); i < n; i++ {
+		if itemModel.ObjectValue(l.sel.Item(i)) == it {
+			return int(i)
+		}
+	}
+	return -1
+}
+
+// ItemAtViewPosition returns the real note at sorted (displayed)
+// position pos — the inverse of ViewPositionOf — or nil if pos is out
+// of range or names a placeholder. Positions come from RowAt or from a
+// caller's own iteration over the live GtkSelectionModel; both agree
+// with ViewPositionOf's coordinate space, since all three read the same
+// l.sel.
+func (l *List) ItemAtViewPosition(pos int) *Item {
+	if pos < 0 || uint(pos) >= l.sel.NItems() {
+		return nil
+	}
+	it := itemModel.ObjectValue(l.sel.Item(uint(pos)))
+	if it.IsPlaceholder() {
+		return nil
+	}
+	return it
+}
+
+// RowAt implements menus.RowLocator: it translates a pixel position
+// relative to the ListView (ListView, not List's own outer Overlay —
+// the caller attaches the right-click gesture there so these
+// coordinates line up with no scrollbar/overlay offset to account for)
+// into the row displayed at that point and its own sorted-order index,
+// via gtk.Widget.Pick plus an ancestor walk: Pick finds the topmost
+// widget actually rendered under the point, which is some descendant of
+// one recycled row's own widget.Row (its checkbox, its label, ...), not
+// the row itself, and never the private GtkListItemWidget GTK parents
+// rows under, which carries no identity this package can look up rows
+// by — so the walk climbs from whatever was hit until it reaches a
+// widget this package tracks in rowWidgets, or reaches the ListView
+// itself with no match (a click that landed between rows, or nowhere).
+func (l *List) RowAt(x, y float64) (row gtk.Widgetter, index int, ok bool) {
+	picked := l.listView.Widget.Pick(x, y, gtk.PickDefault)
+	lvNative := coreglib.BaseObject(l.listView).Native()
+
+	for w := picked; w != nil; w = gtk.BaseWidget(w).Parent() {
+		native := coreglib.BaseObject(w).Native()
+		if native == lvNative {
+			break
+		}
+		b, tracked := l.rowWidgets[native]
+		if !tracked {
+			continue
+		}
+		if b.item == nil || b.item.IsPlaceholder() {
+			return nil, 0, false
+		}
+		pos := l.ViewPositionOf(b.item)
+		if pos < 0 {
+			return nil, 0, false
+		}
+		return b.row, pos, true
+	}
+	return nil, 0, false
+}
+
+// IsTruncatedAt reports whether the row currently displayed at sorted
+// position pos is showing an ellipsis, per widget.Label.IsTruncated —
+// false for a position with no currently bound (on-screen) row, since
+// truncation is only meaningful once a label has been allocated.
+func (l *List) IsTruncatedAt(pos int) bool {
+	it := l.ItemAtViewPosition(pos)
+	if it == nil {
+		return false
+	}
+	for _, b := range l.rows {
+		if b.item == it {
+			return b.row.Label.IsTruncated()
+		}
+	}
+	return false
 }
 
 // SetAnchor marks it as the keyboard-focus anchor within a
@@ -230,7 +340,7 @@ func (l *List) Anchor() *Item { return l.anchor }
 
 // ScrollTo scrolls it into view without changing the selection.
 func (l *List) ScrollTo(it *Item) {
-	if pos := l.model.ViewPosition(it); pos >= 0 {
+	if pos := l.ViewPositionOf(it); pos >= 0 {
 		l.listView.ScrollTo(uint(pos), gtk.ListScrollNone, nil)
 	}
 }
@@ -238,7 +348,7 @@ func (l *List) ScrollTo(it *Item) {
 // ScrollToAndSelect scrolls to and selects it — the typical response to a
 // fresh capture landing at the top of its section.
 func (l *List) ScrollToAndSelect(it *Item) {
-	if pos := l.model.ViewPosition(it); pos >= 0 {
+	if pos := l.ViewPositionOf(it); pos >= 0 {
 		l.listView.ScrollTo(uint(pos), gtk.ListScrollSelect|gtk.ListScrollFocus, nil)
 	}
 }
@@ -337,6 +447,7 @@ func (l *List) setupRow(obj *coreglib.Object) {
 	})
 
 	l.rows[li.Native()] = b
+	l.rowWidgets[coreglib.BaseObject(row).Native()] = b
 	if l.onItemSetup != nil {
 		l.onItemSetup()
 	}
@@ -414,6 +525,7 @@ func (l *List) teardownRow(obj *coreglib.Object) {
 	if b, ok := l.rows[li.Native()]; ok {
 		b.cancelStrip()
 		b.cancelFlash()
+		delete(l.rowWidgets, coreglib.BaseObject(b.row).Native())
 	}
 	delete(l.rows, li.Native())
 }

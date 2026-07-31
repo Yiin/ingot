@@ -31,12 +31,15 @@ type Shell struct {
 	list      *notelist.List
 	composer  *composer.Composer
 	notifier  toast.Notifier
+	notice    *gtk.Label
 
 	hint             *gtk.Box
 	searchEmpty      *gtk.Box
 	searchEmptyLabel *gtk.Label
 
 	lastState state
+
+	onFilterChanged func()
 }
 
 // New assembles the panel shell over sections (see the implicit-
@@ -66,6 +69,9 @@ func New(sections []notelist.Section, project string, panelToast *toast.InPanel,
 		n := s.searchCtl.Apply(query)
 		s.search.SetMatchCount(n)
 		s.RefreshEmptyState(query, n)
+		if s.onFilterChanged != nil {
+			s.onFilterChanged()
+		}
 	})
 
 	s.hint = newHintBlock()
@@ -85,9 +91,16 @@ func New(sections []notelist.Section, project string, panelToast *toast.InPanel,
 	s.stage.SetMeasureOverlay(s.searchEmpty, false)
 	s.stage.SetClipOverlay(s.searchEmpty, false)
 
+	s.notice = gtk.NewLabel("")
+	s.notice.AddCSSClass("panel-notice")
+	s.notice.SetWrap(true)
+	s.notice.SetXAlign(0)
+	s.notice.SetVisible(false)
+
 	s.root = gtk.NewBox(gtk.OrientationVertical, 0)
 	s.root.AddCSSClass("ingot-panel")
 	s.root.SetSizeRequest(theme.PanelWidth, -1)
+	s.root.Append(s.notice)
 	s.root.Append(s.search.Widget())
 	s.root.Append(s.stage)
 	s.root.Append(s.composer.Widget())
@@ -149,6 +162,15 @@ func (s *Shell) SearchBar() *searchbar.SearchBar { return s.search }
 // List returns the panel's note list, for a later child to mutate
 // through its Model() and wire selection/keyboard behaviour against.
 func (s *Shell) List() *notelist.List { return s.list }
+
+// OnFilterChanged registers f to run after every live-search filter
+// change (a query keystroke, or Clear) has been applied to the list.
+// SetFilter changes which rows are displayed with no store event to
+// hang off of, so a caller that keeps its own idea of the list's
+// display order (copper-l2z.61's keymap.Nav wiring) needs this hook to
+// stay in sync — without it, Nav's row order goes stale the moment a
+// search query changes what's actually visible.
+func (s *Shell) OnFilterChanged(f func()) { s.onFilterChanged = f }
 
 // Composer returns the panel's composer, for a later child to wire
 // OnCommit against note creation.

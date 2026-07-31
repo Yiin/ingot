@@ -96,7 +96,7 @@ func (c *ContextMenuController) Popover() *gtk.PopoverMenu {
 // SetMenuModel call this controller makes (i.e. after every right-click).
 // Use it to re-attach any (*gtk.PopoverMenu).AddChild custom widgets —
 // most notably the Move to submenu's "New Section..." entry under
-// newSectionCustomID — since GTK discards a popover's custom children
+// NewSectionCustomID — since GTK discards a popover's custom children
 // each time its menu model is replaced.
 func (c *ContextMenuController) SetOnRebuilt(fn func(popover *gtk.PopoverMenu)) {
 	c.onRebuilt = fn

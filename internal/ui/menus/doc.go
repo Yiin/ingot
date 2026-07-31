@@ -41,7 +41,7 @@
 //
 // "New Section..." is not a GAction either: it needs a text prompt, which
 // does not fit the fire-and-forget action model. Its menu item carries
-// the "custom" attribute newSectionCustomID; a caller embeds the actual
+// the "custom" attribute NewSectionCustomID; a caller embeds the actual
 // entry widget via (*gtk.PopoverMenu).AddChild. GTK discards a popover's
 // custom children every time its menu model is replaced, and
 // ContextMenuController replaces the model on every right-click, so the

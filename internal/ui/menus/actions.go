@@ -23,9 +23,9 @@ var Accels = map[string][]string{
 	"close":           {"<Control>w"},
 }
 
-// newSectionCustomID is the "custom" attribute value on the Move to
+// NewSectionCustomID is the "custom" attribute value on the Move to
 // submenu's "New Section..." item — see the package doc.
-const newSectionCustomID = "menus-new-section"
+const NewSectionCustomID = "menus-new-section"
 
 // moveToCurrentSectionAction is the detailed action name the Move to
 // submenu binds its current-section item to. It is never registered on

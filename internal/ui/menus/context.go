@@ -74,7 +74,7 @@ func expandLabel(expanded bool) string {
 // sensitive but inert; see the package doc), then a separator, then every
 // other project (moving there drops the note into that project's first
 // section), then a separator, then "New Section...", whose item carries
-// no action but the "custom" attribute newSectionCustomID for the caller
+// no action but the "custom" attribute NewSectionCustomID for the caller
 // to fill with a real entry widget via (*gtk.PopoverMenu).AddChild after
 // every rebuild — see ContextMenuController.SetOnRebuilt.
 func BuildMoveToSubmenu(info ContextInfo) *gio.Menu {
@@ -98,7 +98,7 @@ func BuildMoveToSubmenu(info ContextInfo) *gio.Menu {
 
 	newSection := gio.NewMenu()
 	newSectionItem := gio.NewMenuItem("New Section...", "")
-	newSectionItem.SetAttributeValue("custom", glib.NewVariantString(newSectionCustomID))
+	newSectionItem.SetAttributeValue("custom", glib.NewVariantString(NewSectionCustomID))
 	newSection.AppendItem(newSectionItem)
 
 	menu := gio.NewMenu()
