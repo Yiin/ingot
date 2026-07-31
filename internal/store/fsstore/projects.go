@@ -1,9 +1,7 @@
 package fsstore
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 
 	"github.com/Yiin/ingot/internal/store"
 	"github.com/Yiin/ingot/internal/store/mdfile"
@@ -121,10 +119,11 @@ func (s *fileStore) renameProjectLocked(id store.ProjectID, title string) ([]sto
 	return s.flushAndCollect(id, []store.Event{store.ProjectListChanged{}}), nil
 }
 
-// DeleteProject removes a project's in-memory state and its file. A
-// read-only project may still be deleted — removal doesn't risk
-// clobbering content the Store didn't understand, only reading and
-// rewriting it does.
+// DeleteProject removes a project's in-memory state and moves its file
+// to Trash rather than unlinking it (see moveToTrashLocked) — "no data
+// is lost either way" extends to deleting a whole project. A read-only
+// project may still be deleted: moving doesn't risk clobbering content
+// the Store didn't understand, only reading and rewriting it does.
 func (s *fileStore) DeleteProject(id store.ProjectID) error {
 	s.mu.Lock()
 	events, err := s.deleteProjectLocked(id)
@@ -139,12 +138,6 @@ func (s *fileStore) deleteProjectLocked(id store.ProjectID) ([]store.Event, erro
 	if !ok {
 		return nil, store.ErrNotFound
 	}
-	if pe.idleTimer != nil {
-		pe.idleTimer.Stop()
-	}
-	if pe.maxTimer != nil {
-		pe.maxTimer.Stop()
-	}
 
 	for _, sec := range pe.proj.Sections {
 		for _, n := range sec.Notes {
@@ -152,25 +145,18 @@ func (s *fileStore) deleteProjectLocked(id store.ProjectID) ([]store.Event, erro
 		}
 	}
 
-	idx, _ := s.indexOfProject(id)
-	s.order = append(s.order[:idx], s.order[idx+1:]...)
-	delete(s.projects, id)
-
-	events := []store.Event{store.ProjectListChanged{}}
-	if s.active == id {
-		if len(s.order) > 0 {
-			s.active = s.order[0]
-		} else {
-			s.active = ""
-		}
-		events = append(events, store.ActiveProjectChanged{})
-		if err := s.writeStateLocked(); err != nil {
-			events = append(events, store.SaveFailed{})
-		}
+	// Flush any pending edit and move the file to Trash before dropping
+	// the in-memory entry, not after: a project with edits still in its
+	// debounce window would otherwise get trashed with stale content,
+	// and if the move itself fails, unregistering first would leave the
+	// Store believing the project is gone while its file is still live
+	// on disk with no way back to it.
+	events, err := s.flushLocked(id)
+	if err != nil {
+		return nil, fmt.Errorf("fsstore: delete project: %w", err)
 	}
-
-	if err := s.fs.Remove(pe.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return events, fmt.Errorf("fsstore: delete project: %w", err)
+	if _, err := s.moveToTrashLocked(pe, "delete-project"); err != nil {
+		return nil, fmt.Errorf("fsstore: delete project: %w", err)
 	}
-	return events, nil
+	return append(events, s.unregisterProjectLocked(id)...), nil
 }

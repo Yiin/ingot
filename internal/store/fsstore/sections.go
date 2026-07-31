@@ -92,8 +92,17 @@ func (s *fileStore) deleteSectionLocked(id store.SectionID) ([]store.Event, erro
 		return nil, store.ErrLastSection
 	}
 
+	var events []store.Event
 	removed := sections[si].Notes
 	if len(removed) > 0 {
+		// The section's grouping is genuinely destroyed even though its
+		// notes survive by relocating — record what it held, same as
+		// every other destructive op, before the relocation below makes
+		// that grouping unrecoverable.
+		if _, err := s.writeTrashLocked(pid, "delete-section", []trashSection{{title: sections[si].Title, notes: removed}}); err != nil {
+			events = append(events, store.SaveFailed{})
+		}
+
 		if si > 0 {
 			prev := &sections[si-1]
 			prev.Notes = append(prev.Notes, removed...)
@@ -106,7 +115,8 @@ func (s *fileStore) deleteSectionLocked(id store.SectionID) ([]store.Event, erro
 	pe.proj.Sections = append(sections[:si], sections[si+1:]...)
 
 	s.markDirty(pid)
-	return s.flushAndCollect(pid, []store.Event{store.SectionsChanged{}}), nil
+	events = append(events, s.flushAndCollect(pid, []store.Event{store.SectionsChanged{}})...)
+	return events, nil
 }
 
 func (s *fileStore) MoveSection(id store.SectionID, index int) error {

@@ -1,6 +1,7 @@
 package fsstore
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -158,8 +159,11 @@ func (s *fileStore) deleteNotesLocked(ids []store.NoteID) ([]store.Event, error)
 		return roEvents, err
 	}
 
+	removed := s.snapshotRemovedLocked(locs)
 	events := s.removeNoteLocsLocked(locs)
+	events = append(events, s.writeDestructiveTrashLocked("delete-notes", removed)...)
 	events = s.flushTouchedLocked(locs, events)
+	s.setUndoLocked(undoLabel("Delete", len(removed)), removed)
 	return events, nil
 }
 
@@ -198,10 +202,18 @@ func (s *fileStore) clearDoneLocked() ([]store.Event, error) {
 		return nil, nil
 	}
 
+	removed := s.snapshotRemovedLocked(locs)
 	events := s.removeNoteLocsLocked(locs)
+	events = append(events, s.writeDestructiveTrashLocked("clear-done", removed)...)
 	s.markDirty(pid)
 	events = s.flushAndCollect(pid, events)
+	s.setUndoLocked(undoLabel("Clear Done", len(removed)), removed)
 	return events, nil
+}
+
+// undoLabel renders a CanUndo label like "Undo Clear Done (4 notes)".
+func undoLabel(action string, n int) string {
+	return fmt.Sprintf("Undo %s (%d note%s)", action, n, plural(n))
 }
 
 func (s *fileStore) MoveNotes(ids []store.NoteID, toSection store.SectionID) error {

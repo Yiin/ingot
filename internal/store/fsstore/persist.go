@@ -61,8 +61,15 @@ func (s *fileStore) writeStateLocked() error {
 // firing Debounce after the most recent mutation; maxTimer is set only
 // on the transition into "dirty" and is never reset, capping the delay
 // at MaxDelay regardless of how often idleTimer keeps getting pushed
-// back by a continuous stream of edits. Must be called with s.mu held.
+// back by a continuous stream of edits. It's also the one choke point
+// every mutating method funnels a state-committing change through, so
+// it doubles as where the single-level undo slot gets invalidated: per
+// invariant 14, "any subsequent mutation clears the slot." DeleteNotes
+// and ClearDone re-arm it with setUndoLocked immediately afterward,
+// which simply supersedes this clear. Must be called with s.mu held.
 func (s *fileStore) markDirty(id store.ProjectID) {
+	s.clearUndoLocked()
+
 	pe := s.projects[id]
 	if pe == nil || pe.readOnly {
 		return
@@ -90,22 +97,91 @@ func (s *fileStore) doFlush(id store.ProjectID) {
 		s.mu.Unlock()
 		return
 	}
-	err := s.flushLocked(id)
+	events, err := s.flushLocked(id)
 	s.mu.Unlock()
 	if err != nil {
-		s.emit(store.SaveFailed{})
+		events = append(events, store.SaveFailed{})
 	}
+	s.emit(events...)
 }
 
 // flushLocked cancels id's timers and, if it's dirty, writes it — unless
-// it's read-only, or the freshly formatted bytes are identical to what
-// was last written, in which case the write is skipped entirely. On a
-// write failure the project is left dirty and, unless the Store is
-// closing, a fresh idle timer is armed so the Store keeps retrying, per
-// Store.Flush's doc — Close arms no such timer, since nothing will ever
-// be there to catch its eventual SaveFailed. Must be called with s.mu
-// held.
-func (s *fileStore) flushLocked(id store.ProjectID) error {
+// it's read-only, in which case the write is skipped entirely. Before
+// writing, it checks pe.path's live on-disk state against pe's last
+// known fingerprint (see detectExternalChangeLocked): a mismatch means
+// something wrote to the file outside this Store since the fingerprint
+// was recorded, which the file watcher's own 200ms debounce may not
+// have settled on yet. flushLocked is every debounced save's and every
+// immediate-flush structural mutation's write path — the hottest one in
+// the package — so without this check a save fired in that gap would
+// silently clobber the external write via AtomicWrite before the
+// watcher ever saw it happened. When no conflict is detected, the
+// original short-circuit still applies: freshly formatted bytes
+// identical to what was last written skip the write outright. On a
+// write failure (or a failure to even check for a conflict) the project
+// is left dirty and, unless the Store is closing, a fresh idle timer is
+// armed so the Store keeps retrying, per Store.Flush's doc — Close arms
+// no such timer, since nothing will ever be there to catch its eventual
+// SaveFailed. Must be called with s.mu held.
+func (s *fileStore) flushLocked(id store.ProjectID) ([]store.Event, error) {
+	pe := s.projects[id]
+	if pe == nil {
+		return nil, nil
+	}
+
+	if pe.idleTimer != nil {
+		pe.idleTimer.Stop()
+		pe.idleTimer = nil
+	}
+	if pe.maxTimer != nil {
+		pe.maxTimer.Stop()
+		pe.maxTimer = nil
+	}
+	if !pe.dirty {
+		return nil, nil
+	}
+	pe.dirty = false
+	if pe.readOnly {
+		return nil, nil
+	}
+
+	data, err := mdfile.Format(pe.proj)
+	if err != nil {
+		return nil, err
+	}
+
+	trashPath, conflict, err := s.detectExternalChangeLocked(pe)
+	if err != nil {
+		pe.dirty = true
+		if !s.closed {
+			pe.idleTimer = time.AfterFunc(s.debounce, func() { s.post(func() { s.doFlush(id) }) })
+		}
+		return nil, err
+	}
+	if !conflict && bytes.Equal(data, pe.lastWritten) {
+		return nil, nil
+	}
+
+	if err := s.writeAndRecordLocked(id, pe, data); err != nil {
+		return nil, err
+	}
+	if conflict {
+		return []store.Event{store.ConflictResolved{ID: id, SavedTo: trashPath}}, nil
+	}
+	return nil, nil
+}
+
+// flushForceLocked writes id's current in-memory content to disk
+// unconditionally, bypassing both of flushLocked's short-circuits
+// ("not dirty" and "unchanged since pe.lastWritten"). Those compare
+// against pe.lastWritten, which describes what this Store itself last
+// wrote — not necessarily what's on disk right now.
+// resolveConflictLocked (reload.go) needs this: it must physically
+// overwrite whatever an external process just put at pe.path even when
+// that content happens to format identically to our own last-known
+// write, or the "panel wins" conflict policy silently loses on a
+// coincidental byte match. Must be called with s.mu held.
+func (s *fileStore) flushForceLocked(id store.ProjectID) error {
 	pe := s.projects[id]
 	if pe == nil {
 		return nil
@@ -119,9 +195,6 @@ func (s *fileStore) flushLocked(id store.ProjectID) error {
 		pe.maxTimer.Stop()
 		pe.maxTimer = nil
 	}
-	if !pe.dirty {
-		return nil
-	}
 	pe.dirty = false
 	if pe.readOnly {
 		return nil
@@ -131,9 +204,18 @@ func (s *fileStore) flushLocked(id store.ProjectID) error {
 	if err != nil {
 		return err
 	}
-	if bytes.Equal(data, pe.lastWritten) {
-		return nil
-	}
+	return s.writeAndRecordLocked(id, pe, data)
+}
+
+// writeAndRecordLocked is flushLocked/flushForceLocked's shared tail:
+// atomically write data to pe.path, and on success adopt it as pe's new
+// baseline (lastWritten plus the self-write fingerprint) so a watch
+// event echoing this exact write back is recognized and suppressed. On
+// failure the project is left dirty and, unless the Store is closing, a
+// fresh idle timer is armed so the Store keeps retrying, per Store.
+// Flush's doc — Close arms no such timer, since nothing will ever be
+// there to catch its eventual SaveFailed. Must be called with s.mu held.
+func (s *fileStore) writeAndRecordLocked(id store.ProjectID, pe *projectEntry, data []byte) error {
 	if err := fsx.AtomicWrite(s.fs, pe.path, data); err != nil {
 		pe.dirty = true
 		if !s.closed {
@@ -142,16 +224,19 @@ func (s *fileStore) flushLocked(id store.ProjectID) error {
 		return err
 	}
 	pe.lastWritten = data
+	s.recordFingerprintLocked(pe, data)
 	return nil
 }
 
 // flushAndCollect flushes id immediately — bypassing the debounce, for
 // every mutation invariant 14's "Flush immediately" list names — and
-// appends SaveFailed to events if that write failed. Must be called
-// with s.mu held.
+// appends SaveFailed to events if that write failed, or whatever
+// flushLocked itself produced (e.g. ConflictResolved) otherwise. Must be
+// called with s.mu held.
 func (s *fileStore) flushAndCollect(id store.ProjectID, events []store.Event) []store.Event {
-	if err := s.flushLocked(id); err != nil {
-		events = append(events, store.SaveFailed{})
+	evs, err := s.flushLocked(id)
+	if err != nil {
+		return append(events, store.SaveFailed{})
 	}
-	return events
+	return append(events, evs...)
 }

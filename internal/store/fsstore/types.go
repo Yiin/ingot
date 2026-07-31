@@ -37,6 +37,16 @@ type projectEntry struct {
 	// capping how long a continuously-edited project can go unsaved.
 	idleTimer *time.Timer
 	maxTimer  *time.Timer
+
+	// selfSize, selfMTime, and selfSHA are the (size, mtime, sha256) of
+	// the exact bytes this Store itself most recently put at path —
+	// via its own write, the initial load, or a reload/conflict that
+	// adopted an external version as the new baseline. A watch event
+	// whose live Stat and content hash match all three is our own
+	// write echoing back through fsnotify, not a change to react to.
+	selfSize  int64
+	selfMTime time.Time
+	selfSHA   [32]byte
 }
 
 // subEntry is one Subscribe registration. id makes Subscribe's returned

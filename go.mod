@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/diamondburned/gotk4/pkg v0.4.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/holoplot/go-evdev v0.0.0-20260504100651-66d1748fe847
 	github.com/yuin/goldmark v1.8.5

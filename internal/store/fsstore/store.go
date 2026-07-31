@@ -42,6 +42,18 @@ type fileStore struct {
 	// body, keyed by NoteID — see search.go's normalizedForLocked.
 	searchCache map[store.NoteID]normCacheEntry
 
+	// undo is Ingot's single level of undo, or nil when there's nothing
+	// to reverse. See undo.go.
+	undo *undoState
+
+	// watcher and its goroutine watch Paths.Projects for changes made
+	// outside the Store when Options.Watch is set. watchStop asks the
+	// goroutine to exit; watchStopped is closed by the goroutine right
+	// before it returns, so Close can wait for it. See watch.go.
+	watcher      Watcher
+	watchStop    chan struct{}
+	watchStopped chan struct{}
+
 	closed bool
 }
 
@@ -55,14 +67,15 @@ func New(opts Options) (store.Store, error) {
 	}
 
 	s := &fileStore{
-		fs:       opts.FS,
-		paths:    opts.Paths,
-		now:      opts.Now,
-		newID:    opts.NewID,
-		post:     opts.Post,
-		debounce: opts.Debounce,
-		maxDelay: opts.MaxDelay,
-		projects: make(map[store.ProjectID]*projectEntry),
+		fs:           opts.FS,
+		paths:        opts.Paths,
+		now:          opts.Now,
+		newID:        opts.NewID,
+		post:         opts.Post,
+		debounce:     opts.Debounce,
+		maxDelay:     opts.MaxDelay,
+		projects:     make(map[store.ProjectID]*projectEntry),
+		watchStopped: closedChan(),
 	}
 
 	if s.paths.Projects != "" {
@@ -80,8 +93,29 @@ func New(opts Options) (store.Store, error) {
 		return nil, err
 	}
 	s.resolveActive()
+	s.pruneTrash()
+
+	if opts.Watch && s.paths.Projects != "" {
+		w, err := opts.NewWatcher(s.paths.Projects)
+		if err != nil {
+			return nil, fmt.Errorf("fsstore: start watcher: %w", err)
+		}
+		s.watcher = w
+		s.watchStop = make(chan struct{})
+		s.watchStopped = make(chan struct{})
+		go s.watchLoop()
+	}
 
 	return s, nil
+}
+
+// closedChan returns an already-closed channel, so Close can always
+// unconditionally wait on watchStopped even when no watcher was ever
+// started.
+func closedChan() chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
 }
 
 func (s *fileStore) Projects() []store.ProjectRef {
@@ -139,13 +173,6 @@ func (s *fileStore) Note(id store.NoteID) (store.Note, error) {
 	return s.projects[s.order[pi]].proj.Sections[si].Notes[ni], nil
 }
 
-// CanUndo always reports false: single-level undo is a separate package
-// addition (internal/store/fsstore's file-watcher/trash/undo child).
-func (s *fileStore) CanUndo() bool { return false }
-
-// Undo is a no-op until undo lands. See CanUndo.
-func (s *fileStore) Undo() error { return nil }
-
 func (s *fileStore) Subscribe(fn func(store.Event)) func() {
 	s.mu.Lock()
 	id := s.nextSubID
@@ -187,25 +214,29 @@ func (s *fileStore) emit(events ...store.Event) {
 
 func (s *fileStore) Flush(ctx context.Context) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if err := ctx.Err(); err != nil {
+		s.mu.Unlock()
 		return err
 	}
 	var firstErr error
+	var events []store.Event
 	for _, id := range s.order {
-		if err := s.flushLocked(id); err != nil && firstErr == nil {
+		evs, err := s.flushLocked(id)
+		if err != nil && firstErr == nil {
 			firstErr = err
 		}
+		events = append(events, evs...)
 	}
+	s.mu.Unlock()
+
+	s.emit(events...)
 	return firstErr
 }
 
 func (s *fileStore) Close() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.closed {
+		s.mu.Unlock()
 		return nil
 	}
 	// Set before the flush loop, not after: flushLocked's own
@@ -214,10 +245,27 @@ func (s *fileStore) Close() error {
 	// this call returns.
 	s.closed = true
 	var firstErr error
+	var events []store.Event
 	for _, id := range s.order {
-		if err := s.flushLocked(id); err != nil && firstErr == nil {
+		evs, err := s.flushLocked(id)
+		if err != nil && firstErr == nil {
 			firstErr = err
 		}
+		events = append(events, evs...)
 	}
+	// Release the lock before touching the watcher: its goroutine may
+	// be mid-Post, which — with the default synchronous Post — reaches
+	// back into s.mu itself. Holding s.mu across the shutdown signal
+	// would deadlock against that.
+	s.mu.Unlock()
+
+	s.emit(events...)
+
+	if s.watcher != nil {
+		close(s.watchStop)
+		_ = s.watcher.Close()
+	}
+	<-s.watchStopped
+
 	return firstErr
 }
