@@ -179,6 +179,21 @@ func (m *Model) RemoveAt(i int) {
 	// Removing never reorders survivors relative to each other.
 }
 
+// Refresh re-binds it's row in place after a caller mutated its Body or
+// Done field directly, without changing its position — the NoteUpdated
+// counterpart to InsertAt/RemoveAt. It re-splices the same *Item pointer
+// at its own base index, which GTK sees as a remove-then-add, but Born
+// is untouched, so bindRow's justInserted check never replays the
+// insert animation for a plain edit. A no-op if it is not in the model.
+func (m *Model) Refresh(it *Item) {
+	i := m.IndexOf(it)
+	if i < 0 {
+		return
+	}
+	m.gl.Splice(i, 1)
+	m.gl.Splice(i, 0, it)
+}
+
 // Move relocates the item at base position from so that it ends up at
 // base position to (i.e. to is the item's own final index, in the same
 // index space as At/IndexOf — not a pre-removal insertion gap), as two
