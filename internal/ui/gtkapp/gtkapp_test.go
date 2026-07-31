@@ -1,10 +1,25 @@
 package gtkapp
 
 import (
+	"os"
 	"sync/atomic"
 	"syscall"
 	"testing"
 )
+
+// requireDisplay skips when there is no Wayland or X11 display to
+// connect to. Both tests below call App.Run, which runs gtk_init, and
+// gtk_init without a display fails the whole package ("Failed to open
+// display"). That made these look like ordinary unit tests locally,
+// where a session is always present, while failing every headless CI
+// `make check`. The integration job still runs them for real, inside
+// scripts/headless.sh's sway session.
+func requireDisplay(t *testing.T) {
+	t.Helper()
+	if os.Getenv("WAYLAND_DISPLAY") == "" && os.Getenv("DISPLAY") == "" {
+		t.Skip("no WAYLAND_DISPLAY or DISPLAY; gtk_init needs one (run under scripts/headless.sh)")
+	}
+}
 
 // newTestApp builds an App with a unique appID per test so parallel test
 // binaries never contend for the same D-Bus well-known name.
@@ -16,6 +31,7 @@ func newTestApp(t *testing.T) *App {
 // TestPostRunsOnRunGoroutineThread asserts Post's callback executes on the
 // same OS thread as Run, per the package's thread-affinity contract.
 func TestPostRunsOnRunGoroutineThread(t *testing.T) {
+	requireDisplay(t)
 	app := newTestApp(t)
 
 	runTID := syscall.Gettid()
@@ -48,6 +64,7 @@ func TestPostRunsOnRunGoroutineThread(t *testing.T) {
 // recovered rather than crashing the process, and that the app keeps
 // running normally afterward.
 func TestActionPanicLeavesAppAlive(t *testing.T) {
+	requireDisplay(t)
 	app := newTestApp(t)
 
 	var afterPanicRan atomic.Bool
