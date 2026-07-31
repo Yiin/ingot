@@ -10,6 +10,7 @@ import (
 
 	"github.com/Yiin/ingot/internal/store"
 	"github.com/Yiin/ingot/internal/store/mdfile"
+	"github.com/Yiin/ingot/internal/store/provenance"
 )
 
 // recordFingerprintLocked captures path's current on-disk (size, mtime,
@@ -241,6 +242,10 @@ func (s *fileStore) handleExternalCreateLocked(path string, raw []byte) []store.
 	proj, readOnly := s.parseIncomingProjectLocked(raw)
 
 	slug := strings.TrimSuffix(filepath.Base(path), ".md")
+	if metaPath := s.metaPath(slug); metaPath != "" {
+		provenance.Apply(proj.Sections, provenance.Load(s.fs, metaPath))
+	}
+
 	pe := &projectEntry{proj: proj, path: path, slug: slug, readOnly: readOnly, lastWritten: raw}
 	s.recordFingerprintLocked(pe, raw)
 

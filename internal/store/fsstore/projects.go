@@ -158,5 +158,8 @@ func (s *fileStore) deleteProjectLocked(id store.ProjectID) ([]store.Event, erro
 	if _, err := s.moveToTrashLocked(pe, "delete-project"); err != nil {
 		return nil, fmt.Errorf("fsstore: delete project: %w", err)
 	}
+	if metaPath := s.metaPath(pe.slug); metaPath != "" {
+		_ = s.fs.Remove(metaPath)
+	}
 	return append(events, s.unregisterProjectLocked(id)...), nil
 }

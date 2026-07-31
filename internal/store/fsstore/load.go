@@ -10,6 +10,7 @@ import (
 
 	"github.com/Yiin/ingot/internal/store"
 	"github.com/Yiin/ingot/internal/store/mdfile"
+	"github.com/Yiin/ingot/internal/store/provenance"
 )
 
 // load reads every projects/*.md file into s.projects/s.order. Called
@@ -54,6 +55,10 @@ func (s *fileStore) loadProject(name string) error {
 	proj, readOnly := s.parseIncomingProjectLocked(raw)
 
 	slug := strings.TrimSuffix(name, ".md")
+	if metaPath := s.metaPath(slug); metaPath != "" {
+		provenance.Apply(proj.Sections, provenance.Load(s.fs, metaPath))
+	}
+
 	pe := &projectEntry{
 		proj:        proj,
 		path:        path,

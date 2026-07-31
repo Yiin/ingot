@@ -14,3 +14,9 @@ func TestDefaultHotkey(t *testing.T) {
 		t.Errorf("DefaultHotkey().Window = %v, want DefaultHotkeyWindow (%v)", got.Window, DefaultHotkeyWindow)
 	}
 }
+
+func TestDefaultCtrlCFallbackIsOff(t *testing.T) {
+	if got := DefaultCtrlCFallback(); got.Enabled {
+		t.Errorf("DefaultCtrlCFallback().Enabled = true, want false")
+	}
+}

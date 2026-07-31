@@ -88,6 +88,11 @@ func New(opts Options) (store.Store, error) {
 			return nil, fmt.Errorf("fsstore: create state dir: %w", err)
 		}
 	}
+	if s.paths.Meta != "" {
+		if err := s.fs.MkdirAll(s.paths.Meta, 0o755); err != nil {
+			return nil, fmt.Errorf("fsstore: create meta dir: %w", err)
+		}
+	}
 
 	if err := s.load(); err != nil {
 		return nil, err

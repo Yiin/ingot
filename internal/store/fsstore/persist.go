@@ -9,7 +9,36 @@ import (
 	"github.com/Yiin/ingot/internal/store"
 	"github.com/Yiin/ingot/internal/store/fsx"
 	"github.com/Yiin/ingot/internal/store/mdfile"
+	"github.com/Yiin/ingot/internal/store/paths"
+	"github.com/Yiin/ingot/internal/store/provenance"
 )
+
+// metaPath returns slug's provenance sidecar path, or "" if no Meta
+// directory is configured — the same "feature absent" convention
+// statePath uses for Paths.State.
+func (s *fileStore) metaPath(slug string) string {
+	if s.paths.Meta == "" {
+		return ""
+	}
+	p, err := paths.MetaFile(s.paths, slug)
+	if err != nil {
+		return ""
+	}
+	return p
+}
+
+// writeMetaLocked writes (or, once empty, deletes) pe's provenance
+// sidecar. Failures are swallowed rather than surfaced as SaveFailed:
+// the sidecar is advisory only and must never be required for correct
+// operation, so a write failure here may only cost provenance on the
+// next reload, never block or retry the project's own save.
+func (s *fileStore) writeMetaLocked(pe *projectEntry) {
+	path := s.metaPath(pe.slug)
+	if path == "" {
+		return
+	}
+	_ = provenance.Save(s.fs, path, provenance.Extract(pe.proj.Sections))
+}
 
 // stateFile is the shape of $XDG_STATE_HOME/ingot/state.json.
 type stateFile struct {
@@ -225,6 +254,7 @@ func (s *fileStore) writeAndRecordLocked(id store.ProjectID, pe *projectEntry, d
 	}
 	pe.lastWritten = data
 	s.recordFingerprintLocked(pe, data)
+	s.writeMetaLocked(pe)
 	return nil
 }
 

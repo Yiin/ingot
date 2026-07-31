@@ -19,6 +19,22 @@ func DefaultHotkey() Hotkey {
 	return Hotkey{Window: DefaultHotkeyWindow}
 }
 
+// CtrlCFallback holds the user-tunable synthetic Ctrl+C clipboard
+// capture settings — the fallback for apps that fill only CLIPBOARD,
+// never PRIMARY, on selection.
+type CtrlCFallback struct {
+	// Enabled turns the fallback on. It types a keystroke into whatever
+	// application currently has focus, which is invasive enough that it
+	// must be an explicit opt-in rather than a sensible default.
+	Enabled bool
+}
+
+// DefaultCtrlCFallback returns the CtrlCFallback settings used until a
+// config file loader overrides them: off.
+func DefaultCtrlCFallback() CtrlCFallback {
+	return CtrlCFallback{Enabled: false}
+}
+
 // DefaultPanelToggleBinding is the compositor keybinding Ingot suggests
 // for toggling the panel — advisory only, since GTK has no way to
 // install a system-wide binding itself; see Config.PanelToggleBinding.
@@ -29,6 +45,9 @@ const DefaultPanelToggleBinding = "<Super><Shift>c"
 // overrides it.
 type Config struct {
 	Hotkey Hotkey
+	// CtrlCFallback holds the opt-in synthetic Ctrl+C clipboard capture
+	// settings. Off unless config.toml explicitly enables it.
+	CtrlCFallback CtrlCFallback
 	// PanelToggleBinding is the binding config.toml documents for
 	// toggling the panel. Ingot cannot install this itself — there is
 	// no portal API for a modifier-only global binding (see the epic's
@@ -53,6 +72,7 @@ type Config struct {
 func Default() Config {
 	return Config{
 		Hotkey:             DefaultHotkey(),
+		CtrlCFallback:      DefaultCtrlCFallback(),
 		PanelToggleBinding: DefaultPanelToggleBinding,
 		Theme:              "light",
 		Keys:               map[string]string{},

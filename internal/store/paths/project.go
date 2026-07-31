@@ -23,6 +23,16 @@ func ProjectFile(l Layout, slug string) (string, error) {
 	return filepath.Join(l.Projects, slug+".md"), nil
 }
 
+// MetaFile returns the provenance sidecar path for slug under l.Meta,
+// mirroring ProjectFile's validation so a slug read back from an
+// untrusted source can never escape Meta either.
+func MetaFile(l Layout, slug string) (string, error) {
+	if err := validateSlug(slug); err != nil {
+		return "", err
+	}
+	return filepath.Join(l.Meta, slug+".json"), nil
+}
+
 func validateSlug(slug string) error {
 	if slug == "" {
 		return fmt.Errorf("paths: invalid slug %q: empty", slug)
