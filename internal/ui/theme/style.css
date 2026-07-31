@@ -456,6 +456,15 @@ checkbutton check:checked {
   color: var(--ink);
 }
 
+/* Persistent degraded-state banner (internal/ui/panel's SetNotice) —
+ * e.g. "the global chord is off". Sits above the search bar, hidden
+ * when there is nothing to say. */
+.panel-notice {
+  padding: 6px 15px;
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
 .search-empty-clear {
   color: var(--accent);
   background: none;

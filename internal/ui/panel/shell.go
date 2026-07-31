@@ -31,6 +31,7 @@ type Shell struct {
 	list      *notelist.List
 	composer  *composer.Composer
 	notifier  toast.Notifier
+	notice    *gtk.Label
 
 	hint             *gtk.Box
 	searchEmpty      *gtk.Box
@@ -85,9 +86,16 @@ func New(sections []notelist.Section, project string, panelToast *toast.InPanel,
 	s.stage.SetMeasureOverlay(s.searchEmpty, false)
 	s.stage.SetClipOverlay(s.searchEmpty, false)
 
+	s.notice = gtk.NewLabel("")
+	s.notice.AddCSSClass("panel-notice")
+	s.notice.SetWrap(true)
+	s.notice.SetXAlign(0)
+	s.notice.SetVisible(false)
+
 	s.root = gtk.NewBox(gtk.OrientationVertical, 0)
 	s.root.AddCSSClass("ingot-panel")
 	s.root.SetSizeRequest(theme.PanelWidth, -1)
+	s.root.Append(s.notice)
 	s.root.Append(s.search.Widget())
 	s.root.Append(s.stage)
 	s.root.Append(s.composer.Widget())
