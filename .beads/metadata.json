@@ -2,6 +2,6 @@
   "database": "dolt",
   "backend": "dolt",
   "dolt_mode": "embedded",
-  "dolt_database": "yiin",
-  "project_id": "f547e2cd-a17c-41ee-8eeb-0dc32695b271"
+  "dolt_database": "copper",
+  "project_id": "91d5476c-002d-4216-8762-efa8b9322f88"
 }
