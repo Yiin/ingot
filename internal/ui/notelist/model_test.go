@@ -217,6 +217,24 @@ func TestSectionCountIgnoresPlaceholder(t *testing.T) {
 	}
 }
 
+func TestItemByID(t *testing.T) {
+	m := NewModel(testSections)
+	a := NewItem("a", "todo", "a", false)
+	m.Append(a)
+
+	if got := m.ItemByID("a"); got != a {
+		t.Errorf("ItemByID(%q) = %v, want the same *Item Append was given", "a", got)
+	}
+	if got := m.ItemByID("missing"); got != nil {
+		t.Errorf("ItemByID(missing id) = %v, want nil", got)
+	}
+	// The empty-section placeholder always has ID == "" — must never
+	// match a lookup for "".
+	if got := m.ItemByID(""); got != nil {
+		t.Errorf("ItemByID(\"\") = %v, want nil (never returns a placeholder)", got)
+	}
+}
+
 func itemIDs(items []*Item) []string {
 	ids := make([]string, len(items))
 	for i, it := range items {

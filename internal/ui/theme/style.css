@@ -85,6 +85,12 @@
   --scrollbar-inset: 3;
   --scrollbar-ink: rgba(0,0,0,.28);
 
+  --editor-w: 520;
+  --editor-h: 420;
+  --editor-pad: 20;
+  --editor-font: 15;
+  --editor-line: 22;
+
   --focus-ring-color: var(--accent);
   --panel-shadow-unfocused: 0 4px 14px rgba(0,0,0,.10), 0 1px 4px rgba(0,0,0,.04);
   --panel-hint-pad: 40;
@@ -476,4 +482,15 @@ checkbutton check:checked {
   box-shadow: none;
   border: none;
   padding: 0;
+}
+
+/* Note editor window (internal/ui/editorwindow): full-bleed body text on
+ * the same warm card surface as a note row, at its own (larger) type
+ * size — never the panel's --font-body/--line-body, which are sized for
+ * a 3-line-clamped card, not a full editing surface. */
+.editor-view {
+  background-color: var(--card-bg);
+  color: var(--ink);
+  font-size: calc(var(--editor-font) * 1px);
+  line-height: calc(var(--editor-line) / var(--editor-font));
 }

@@ -108,6 +108,22 @@ func (m *Model) Len() int { return len(m.list) }
 // At returns the item at base position i.
 func (m *Model) At(i int) *Item { return m.list[i] }
 
+// ItemByID returns the real note with the given non-empty ID, or nil if
+// none is currently in the model. Inline editing and expand/collapse
+// (copper-l2z.27) go through this rather than a raw *Item pointer, since
+// keymap.Nav (the focused-row tracker) only ever carries a row's ID.
+func (m *Model) ItemByID(id string) *Item {
+	if id == "" {
+		return nil
+	}
+	for _, it := range m.list {
+		if it.ID == id {
+			return it
+		}
+	}
+	return nil
+}
+
 // IndexOf returns it's base position, or -1 if it is not in the model.
 func (m *Model) IndexOf(it *Item) int {
 	for i, v := range m.list {

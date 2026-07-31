@@ -85,6 +85,7 @@ type List struct {
 	onToggle           func(it *Item, done bool)
 	onSelectionChanged func()
 	onActivate         func(it *Item)
+	onEditCommitted    func(id, text string)
 
 	// Test hooks. Only ever set from list_integration_test.go, which
 	// needs a live GTK display and does not run in this sandbox — see
@@ -399,6 +400,80 @@ func (l *List) RefreshHighlights() {
 	}
 }
 
+// ConnectEditCommitted registers f to run whenever an inline edit
+// started by StartInlineEdit commits (Enter), with the edited note's ID
+// and its new trimmed body.
+func (l *List) ConnectEditCommitted(f func(id, text string)) { l.onEditCommitted = f }
+
+// boundRow returns the rowBinding currently displaying it, or nil if it
+// has no live (on-screen) row — the same off-screen-is-a-no-op contract
+// as FlashDuplicate below.
+func (l *List) boundRow(it *Item) *rowBinding {
+	for _, b := range l.rows {
+		if b.item == it {
+			return b
+		}
+	}
+	return nil
+}
+
+// StartInlineEdit swaps the row displaying id's note for an inline
+// composer.Composer seeded with its raw Markdown body — see
+// widget.Row.StartEdit. Committing (Enter) updates the item's Body,
+// re-renders the label, and fires ConnectEditCommitted. A no-op if id
+// names no item, or that item has no currently-bound (on-screen) row.
+func (l *List) StartInlineEdit(id string) {
+	it := l.model.ItemByID(id)
+	if it == nil {
+		return
+	}
+	b := l.boundRow(it)
+	if b == nil {
+		return
+	}
+	b.row.StartEdit(it.Body, func(text string) {
+		it.Body = text
+		b.row.Label.SetBody(text)
+		// SetBody always renders the clamped, single-paragraph markup —
+		// if the row was expanded before editing started, re-apply that
+		// so committing does not silently collapse it back to 3 lines
+		// while the .expanded CSS class (and IsExpanded()) still claims
+		// otherwise.
+		if b.row.IsExpanded() {
+			b.row.Label.Expand()
+		}
+		if l.onEditCommitted != nil {
+			l.onEditCommitted(it.ID, text)
+		}
+	})
+}
+
+// SetExpanded drops or restores id's row's 3-line cap — see
+// widget.Row.SetExpanded. A no-op if id names no item, or that item has
+// no currently-bound (on-screen) row.
+func (l *List) SetExpanded(id string, expanded bool) {
+	it := l.model.ItemByID(id)
+	if it == nil {
+		return
+	}
+	if b := l.boundRow(it); b != nil {
+		b.row.SetExpanded(expanded)
+	}
+}
+
+// ToggleExpanded flips id's row between collapsed and expanded — Alt+
+// Enter's action. A no-op if id names no item, or that item has no
+// currently-bound (on-screen) row.
+func (l *List) ToggleExpanded(id string) {
+	it := l.model.ItemByID(id)
+	if it == nil {
+		return
+	}
+	if b := l.boundRow(it); b != nil {
+		b.row.SetExpanded(!b.row.IsExpanded())
+	}
+}
+
 func (l *List) invalidateSort() {
 	l.orderSorter.Changed(gtk.SorterChangeDifferent)
 	l.sectionSorter.Changed(gtk.SorterChangeDifferent)
@@ -480,6 +555,7 @@ func (l *List) bindRow(obj *coreglib.Object) {
 	li.SetActivatable(!placeholder)
 
 	if !placeholder {
+		b.row.CancelEdit()
 		b.row.SetExpanded(false)
 		b.row.SetDragging(false)
 		b.row.SetSelectionAnchor(it == l.anchor)
@@ -516,6 +592,7 @@ func (l *List) unbindRow(obj *coreglib.Object) {
 	if b, ok := l.rows[li.Native()]; ok {
 		b.cancelStrip()
 		b.cancelFlash()
+		b.row.CancelEdit() // don't let a pooled row hold a live composer until its next bind
 		b.item = nil
 	}
 }

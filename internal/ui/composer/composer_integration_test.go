@@ -45,3 +45,17 @@ func TestSetProjectUpdatesPlaceholder(t *testing.T) {
 	win.SetChild(c.Widget())
 	c.SetProject("Personal") // exercises the call path; no public getter by design
 }
+
+// TestDisablePlaceholderStaysHiddenEvenWhenEmpty covers copper-l2z.27's
+// inline row editor: an empty buffer there (select-all, delete) must
+// never show the bottom composer's own "Add a note or a prompt ()"
+// invitation.
+func TestDisablePlaceholderStaysHiddenEvenWhenEmpty(t *testing.T) {
+	win := newTestWindow(t)
+	c := composer.New("")
+	win.SetChild(c.Widget())
+
+	c.DisablePlaceholder()
+	c.SetText("something")
+	c.SetText("") // empty buffer: handleTextChanged must not re-show it
+}
