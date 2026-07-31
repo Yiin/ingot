@@ -427,6 +427,35 @@ func (l *List) RefreshHighlights() {
 // and its new trimmed body.
 func (l *List) ConnectEditCommitted(f func(id, text string)) { l.onEditCommitted = f }
 
+// EditingInline reports whether any on-screen row is currently in inline
+// edit mode. Only bound rows can be editing at all — StartInlineEdit is
+// a no-op for an item with no live row — so iterating the recycled
+// bindings sees every edit in flight, the same way RefreshHighlights
+// reaches every visible row.
+func (l *List) EditingInline() bool {
+	for _, b := range l.rows {
+		if b.row.IsEditing() {
+			return true
+		}
+	}
+	return false
+}
+
+// CancelInlineEdit drops any in-flight inline edit without committing
+// it, restoring the row to its rendered label. A no-op when nothing is
+// being edited.
+func (l *List) CancelInlineEdit() {
+	for _, b := range l.rows {
+		if b.row.IsEditing() {
+			b.row.CancelEdit()
+		}
+	}
+}
+
+// ClearSelection unselects every row. Escape's cascade uses this to undo
+// a multi-select before falling through to any later step.
+func (l *List) ClearSelection() { l.sel.UnselectAll() }
+
 // boundRow returns the rowBinding currently displaying it, or nil if it
 // has no live (on-screen) row — the same off-screen-is-a-no-op contract
 // as FlashDuplicate below.

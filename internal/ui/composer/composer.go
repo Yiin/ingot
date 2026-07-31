@@ -143,6 +143,11 @@ func (c *Composer) SetText(text string) { c.buffer.SetText(text) }
 // Focus grabs keyboard focus into the text view.
 func (c *Composer) Focus() { c.view.GrabFocus() }
 
+// Focused reports whether the composer's text view currently holds
+// keyboard focus. Escape's cascade only redirects focus here when it is
+// somewhere else, so it needs to ask.
+func (c *Composer) Focused() bool { return c.view.HasFocus() }
+
 // View exposes the underlying GtkTextView. The top-level composer has
 // no need for this itself; it exists for copper-l2z.27's inline row
 // editing, which reuses Composer wholesale but still needs to attach

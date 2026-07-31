@@ -117,6 +117,17 @@ func isolatedXDGEnv(t *testing.T) (env []string, dataHome string) {
 // is the regression, not a pixel-perfect golden image.
 func assertNotUniform(t *testing.T, path string) {
 	t.Helper()
+	if isUniform(t, path) {
+		t.Fatalf("%s is uniformly one colour — nothing rendered", path)
+	}
+}
+
+// isUniform reports whether every pixel of the PNG at path is the same
+// colour. Panel up means a non-uniform screen; panel hidden means a
+// uniform one, so both the smoke test's assertion and the Escape test's
+// poll are phrased over this one predicate.
+func isUniform(t *testing.T, path string) bool {
+	t.Helper()
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -139,11 +150,11 @@ func assertNotUniform(t *testing.T, path string) {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
 			r, g, b, a := img.At(x, y).RGBA()
 			if r != fr || g != fg || b != fb || a != fa {
-				return
+				return false
 			}
 		}
 	}
-	t.Fatalf("%s is uniformly one colour (rgba %d,%d,%d,%d) — nothing rendered", path, fr, fg, fb, fa)
+	return true
 }
 
 func TestRun_StartsMapsCapturesAndSingleInstances(t *testing.T) {

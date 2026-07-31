@@ -226,6 +226,9 @@ func (a *App) startup() error {
 	a.wireListToggle()
 	a.wireMenus()
 	a.wireNav()
+	// After wireMenus: the cascade's first step closes the context menu
+	// popover, which wireMenus is what creates.
+	a.wireEscape()
 
 	win.ConnectCloseRequest(func() bool {
 		defer guard("close-request")()

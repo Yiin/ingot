@@ -67,6 +67,13 @@ cmd_log="$work_dir/command.log"
 # `go test` reports nothing at all.
 {
 	printf '#!/usr/bin/env bash\n'
+	# dbus-run-session gives the command its own session bus. Without it
+	# the tests inherit the developer's real DBUS_SESSION_BUS_ADDRESS, so
+	# a running ingot.service owns lt.yiin.ingot already and every
+	# `ingot run` under test immediately hands off to it and exits 0 —
+	# the suite then passes or fails depending on whether the user
+	# happens to have Ingot running.
+	printf 'dbus-run-session -- '
 	printf '%q ' "$@"
 	printf '>%q 2>&1\n' "$cmd_log"
 	printf 'echo $? > %q\n' "$status_file"

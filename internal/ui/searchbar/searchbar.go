@@ -94,6 +94,11 @@ func (s *SearchBar) Focus() { s.entry.GrabFocus() }
 // OnQueryChanged still runs.
 func (s *SearchBar) Clear() { s.entry.SetText("") }
 
+// Text returns the search entry's current text, whether or not the entry
+// holds focus — Escape's cascade clears a stale query from anywhere in
+// the panel, not just while the user is typing in it.
+func (s *SearchBar) Text() string { return s.entry.Text() }
+
 // OnQueryChanged registers f to be called with the current query text
 // every time it changes.
 func (s *SearchBar) OnQueryChanged(f func(query string)) { s.onQueryChanged = f }
