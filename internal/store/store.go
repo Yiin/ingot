@@ -45,9 +45,11 @@ type Store interface {
 	// firing a NotesSpliced removal at the source and an insertion at
 	// the destination.
 	MoveNotes(ids []NoteID, toSection SectionID) error
-	// MergeNotes combines two or more notes, in the given order, into
-	// one new SourceMerged note at the position of the first, and
-	// removes the rest. Returns ErrTooFewNotes for fewer than two ids.
+	// MergeNotes combines two or more notes, in document order —
+	// independent of the order ids are given in — into one new
+	// SourceMerged note at the position of the document-order-first
+	// input, and removes the rest. Returns ErrTooFewNotes for fewer
+	// than two ids.
 	MergeNotes(ids []NoteID) (NoteID, error)
 	// ClearDone removes every done note from the active project.
 	ClearDone() error
