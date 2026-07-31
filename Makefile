@@ -31,12 +31,12 @@ bench:
 test-integration:
 	./scripts/headless.sh go test -tags integration ./...
 
-# Regenerates assets/screenshot.png from the same map-and-capture
-# machinery internal/layershell's screenshot test uses, so the README
-# image is reproducible instead of hand-made.
+# Regenerates assets/screenshot.png from a genuine capture of the real
+# assembled panel (internal/ui/panel.Shell with fixture notes, mapped as
+# an actual layer-shell surface) rather than a hand-built mockup.
 screenshot:
 	INGOT_SCREENSHOT_OUT=$(CURDIR)/assets/screenshot.png \
-		./scripts/headless.sh go test -tags integration -count=1 -run TestScreenshot_MapsAndCapturesANonUniformImage -v ./internal/layershell/...
+		./scripts/headless.sh go test -tags integration -count=1 -run TestScreenshot_CapturesTheAssembledPanel -v ./internal/ui/panel/...
 
 # Plain `go vet` fails on internal/layershell: the gotk4 idiom for getting a
 # C pointer from a widget converts Native()'s uintptr to unsafe.Pointer,

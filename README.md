@@ -2,7 +2,7 @@
 
 Ingot is a keyboard-first quick-capture panel for Wayland: a to-do list, a clipboard, and a scratchpad for AI-assisted work, always one shortcut away.
 
-![Ingot panel showing a note list, a selected note, and the composer](assets/screenshot.png)
+![Ingot panel showing a note list grouped into sections, a completed note, a markdown prompt, and the composer](assets/screenshot.png)
 
 ## What it does
 
