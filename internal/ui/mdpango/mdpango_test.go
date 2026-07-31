@@ -112,6 +112,19 @@ func TestSafeSurvivesHostileInput(t *testing.T) {
 	}
 }
 
+func TestSafeCollapsedNeverContainsNewline(t *testing.T) {
+	for _, body := range hostileBodies {
+		markup := SafeCollapsed(body)
+		if strings.Contains(markup, "\n") {
+			t.Errorf("SafeCollapsed(%q) = %q, contains a newline", body, markup)
+		}
+		stripped := anchorTag.ReplaceAllString(markup, "")
+		if _, _, _, err := pango.ParseMarkup(stripped, 0); err != nil {
+			t.Fatalf("SafeCollapsed(%q) = %q, pango.ParseMarkup after anchor-stripping: %v", body, markup, err)
+		}
+	}
+}
+
 func FuzzSafe(f *testing.F) {
 	for _, body := range hostileBodies {
 		f.Add(body)

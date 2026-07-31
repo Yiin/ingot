@@ -21,7 +21,17 @@ var anchorTag = regexp.MustCompile(`</?a\b[^>]*>`)
 // On any validation error, fall back to fully escaped plain text: this can
 // never fail to parse, since it contains no tags at all.
 func Safe(body string) string {
-	markup := Full(body)
+	return validate(Full(body), body)
+}
+
+// SafeCollapsed is Safe for the single-paragraph markup Collapsed produces —
+// what a clamped row label needs, since GtkLabel.SetLines caps lines per
+// paragraph and a \n in the label would defeat the cap.
+func SafeCollapsed(body string) string {
+	return validate(Collapsed(body), body)
+}
+
+func validate(markup, body string) string {
 	if _, _, _, err := pango.ParseMarkup(anchorTag.ReplaceAllString(markup, ""), 0); err != nil {
 		return escapeText(body)
 	}
