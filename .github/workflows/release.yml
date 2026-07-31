@@ -17,12 +17,19 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
+      # gobject-introspection carries the .pc file gotk4's cgo build needs;
+      # gtk4 alone does not pull it in.
       - name: Install dependencies
-        run: pacman -Sy --noconfirm --needed base-devel git go gtk4 gtk4-layer-shell pkgconf github-cli
+        run: pacman -Sy --noconfirm --needed base-devel git go gtk4 gtk4-layer-shell gobject-introspection pkgconf github-cli
 
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Without this the root container cannot read the runner-owned
+      # checkout, and `go build` dies with "error obtaining VCS status".
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Resolve version and GTK4 version
         id: vars

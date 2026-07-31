@@ -17,10 +17,19 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
+      # gobject-introspection carries gobject-introspection-1.0.pc, which
+      # gotk4's core/gerror needs at cgo compile time. gtk4 does not pull
+      # it in, so without it every cgo package fails to configure.
       - name: Install dependencies
-        run: pacman -Sy --noconfirm --needed base-devel git go gtk4 gtk4-layer-shell pkgconf golangci-lint
+        run: pacman -Sy --noconfirm --needed base-devel git go gtk4 gtk4-layer-shell gobject-introspection pkgconf golangci-lint
 
       - uses: actions/checkout@v4
+
+      # The container runs as root while the checkout is owned by the
+      # runner's uid, so git refuses the repo as "dubious ownership". That
+      # breaks the Makefile's `git describe` and Go's VCS stamping.
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Resolve GTK version for the cache key
         id: gtk
@@ -61,10 +70,23 @@ jobs:
       # `check` job needs to pass for that coverage to count.
       - name: Install dependencies
         run: |
-          pacman -Sy --noconfirm --needed base-devel git go gtk4 gtk4-layer-shell pkgconf \
+          pacman -Sy --noconfirm --needed base-devel git go gtk4 gtk4-layer-shell gobject-introspection pkgconf \
             sway grim wtype wl-clipboard
 
+      # Arch ships sway with cap_sys_nice=ep. Docker's default bounding set
+      # has no CAP_SYS_NICE, so execve fails outright with EPERM
+      # ("/usr/bin/sway: Operation not permitted") before sway prints a
+      # thing. sway wants that capability only to raise its scheduling
+      # priority, which the headless software backend does not need, so
+      # stripping the file capability is enough — no extra container
+      # privileges required.
+      - name: Strip sway's file capabilities
+        run: setcap -r /usr/bin/sway
+
       - uses: actions/checkout@v4
+
+      - name: Trust the workspace
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Resolve GTK version for the cache key
         id: gtk
