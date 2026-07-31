@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Ingot
+GenericName=Quick Capture Panel
+Comment=Keyboard-first quick-capture panel: to-do list, clipboard, and scratchpad
+Exec=ingot run
+TryExec=ingot
+Icon=lt.yiin.ingot
+Terminal=false
+Categories=Utility;
+StartupNotify=false
+StartupWMClass=lt.yiin.ingot

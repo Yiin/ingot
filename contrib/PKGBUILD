@@ -1,0 +1,40 @@
+# Maintainer: Stanislovas Janonis <root@yiin.lt>
+pkgname=ingot
+# 0.1.0 is the version this PKGBUILD tracks ahead of the first tagged
+# release; bump pkgver and sha256sums together once v0.1.0 actually
+# exists on GitHub (copper-l2z.34 wires up tags and the release
+# workflow). Until then this package cannot build — use ingot-git.
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Keyboard-first quick-capture panel for Wayland: a to-do list, a clipboard, and a scratchpad, an unofficial Wayland reimplementation of Copper by shadcn"
+arch=('x86_64')
+url="https://github.com/Yiin/ingot"
+license=('GPL-3.0-or-later')
+depends=('gtk4' 'gtk4-layer-shell' 'glibc')
+makedepends=('go' 'git')
+optdepends=(
+	'wl-clipboard: selection capture and clipboard'
+	'wtype: optional key injection'
+)
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+	cd "$pkgname-$pkgver"
+	export CGO_CPPFLAGS="${CPPFLAGS}"
+	export CGO_CFLAGS="${CFLAGS}"
+	export CGO_CXXFLAGS="${CXXFLAGS}"
+	export CGO_LDFLAGS="${LDFLAGS}"
+	export GOFLAGS="-buildmode=pie -trimpath -ldflags=-linkmode=external -mod=readonly -modcacherw"
+	go build -o ingot ./cmd/ingot
+}
+
+package() {
+	cd "$pkgname-$pkgver"
+	install -Dm755 ingot "$pkgdir/usr/bin/ingot"
+	install -Dm644 contrib/ingot.desktop "$pkgdir/usr/share/applications/lt.yiin.ingot.desktop"
+	install -Dm644 assets/ingot.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/lt.yiin.ingot.svg"
+	install -Dm644 contrib/ingot.service "$pkgdir/usr/lib/systemd/user/ingot.service"
+	install -Dm644 contrib/70-ingot-input.rules "$pkgdir/usr/lib/udev/rules.d/70-ingot-input.rules"
+	install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
