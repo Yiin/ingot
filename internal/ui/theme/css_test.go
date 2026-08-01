@@ -67,6 +67,32 @@ func TestStylesheetDefinesRequiredClasses(t *testing.T) {
 	}
 }
 
+// TestFocusVisibleSelectorsAlsoRequireFocus guards the one-widget meaning
+// of every focus-ring selector. GTK sets GTK_STATE_FLAG_FOCUS_VISIBLE on
+// the focused widget *and every ancestor* (measured live: focusing the
+// composer's text view set it on the window, the panel box, the composer
+// box and the scrolled window too), so a bare ":focus-visible" selector
+// rings the whole ancestor chain. On the layer-shell panel that showed up
+// as blue arcs at the four rounded corners plus a second ring around the
+// composer. GTK_STATE_FLAG_FOCUSED does not propagate, so pairing the two
+// is what keeps a ring on one widget.
+func TestFocusVisibleSelectorsAlsoRequireFocus(t *testing.T) {
+	stripped := cssCommentRE.ReplaceAllString(theme.CSS, "")
+	// Every selector fragment ending in :focus-visible, with whatever
+	// pseudo-classes precede it, so ":focus:focus-visible" is
+	// distinguishable from a bare ":focus-visible".
+	re := regexp.MustCompile(`[^\s,{}]*:focus-visible`)
+	found := re.FindAllString(stripped, -1)
+	if len(found) == 0 {
+		t.Fatal("style.css declares no :focus-visible selector at all")
+	}
+	for _, sel := range found {
+		if !strings.Contains(sel, ":focus:focus-visible") {
+			t.Errorf("selector %q uses :focus-visible without :focus, so it rings every ancestor of the focused widget", sel)
+		}
+	}
+}
+
 // TestFontFamilyIsWired guards against theme.FontFamily going dead again:
 // it was defined but never referenced by any font-family declaration,
 // so the bundled Inter Variable font was registered but never actually

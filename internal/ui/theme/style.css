@@ -362,6 +362,18 @@ window.ingot-panel-window.background {
   background-color: var(--field-bg);
   border-radius: calc(var(--search-radius) * 1px);
   min-height: calc(var(--search-h) * 1px);
+  transition: box-shadow 150ms ease;
+}
+
+/* The ring belongs on the pill, not on the GtkText inside it: the entry
+ * node is a bare rectangle inset from the pill's rounded edge, so ringing
+ * it draws a rectangle floating inside a capsule. Keyed on :focus-within
+ * rather than the entry's own :focus so the mark matches .composer.focused
+ * — both appear on any focus, pointer or keyboard, and the overflow button
+ * is a sibling of .search-field (searchbar.go:71), not a child, so it
+ * cannot trigger this. */
+.search-field:focus-within {
+  box-shadow: 0 0 0 calc(var(--focus-ring) * 1px) var(--focus-ring-color);
 }
 
 .search-icon {
@@ -503,13 +515,37 @@ checkbutton check:checked {
  * "opacity 0->1 and width 0->2px" is approximated here as an
  * outline-color fade, since GTK CSS has no outline opacity and the ring
  * must never move (only its own presence animates, which a colour fade
- * already delivers without touching layout). */
-*:focus-visible {
+ * already delivers without touching layout).
+ *
+ * :focus is not redundant beside :focus-visible, it is what makes this
+ * rule mean one widget. GTK sets GTK_STATE_FLAG_FOCUS_VISIBLE on the
+ * window and it propagates down to every descendant, so `*:focus-visible`
+ * alone matches the whole widget tree: measured live, opening the panel
+ * from the keyboard drew this outline on the window, the panel box, the
+ * composer box and the scrolled window all at once. On a layer-shell
+ * surface sized exactly to the panel, the panel box's own ring showed as
+ * four blue arcs at the rounded corners, and the composer wore a second
+ * ring outside the one .composer.focused already draws. GTK_STATE_FLAG_
+ * FOCUSED does not propagate, so :focus narrows this back to the widget
+ * that actually holds the caret. Adwaita pairs the two the same way. */
+*:focus:focus-visible {
   outline-style: solid;
   outline-width: calc(var(--focus-ring) * 1px);
   outline-color: var(--focus-ring-color);
   outline-offset: 2px;
   transition: outline-color 120ms ease-out;
+}
+
+/* Text entries whose focus is already marked somewhere better opt out of
+ * the generic ring, so focusing them draws one mark and not two: the
+ * composer's text view sits inside .composer.focused's 2dp ring, the
+ * search entry's ring moves out to .search-field:focus-within above, and
+ * the editor's text view is the only focusable thing in its own window,
+ * where a ring around the whole body is noise rather than an affordance. */
+.composer-text:focus:focus-visible,
+.editor-view:focus:focus-visible,
+.search-entry:focus:focus-visible {
+  outline-style: none;
 }
 
 /* First-run hint and search-no-matches blocks (internal/ui/panel):
