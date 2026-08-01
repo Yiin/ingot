@@ -35,6 +35,31 @@ Usage:
   ingot import <file.md|->  Import a Markdown file as a new project
 `
 
+// subcommands is Ingot's dispatch table. It is a map rather than a switch
+// so the set of real subcommands is data a test can read: usage below and
+// the README both name commands in prose, and nothing otherwise stops
+// either from naming one that does not exist. That is not hypothetical —
+// the README documented `ingot toggle` as the way to show and hide the
+// panel, which was never a subcommand at all, so every keybind copied out
+// of it printed usage and exited 2. TestDocumentedCommandsExist is what
+// now catches that.
+//
+// There is deliberately no "toggle" entry: a bare `ingot` already toggles
+// (see Run), and a second spelling of one behaviour is a thing to keep in
+// sync rather than a convenience.
+var subcommands = map[string]func([]string) error{
+	"run":    runRun,
+	"doctor": runDoctor,
+	"setup":  runSetup,
+	"version": func([]string) error {
+		fmt.Println(buildinfo.Version())
+		return nil
+	},
+	"path":   runPath,
+	"export": runExport,
+	"import": runImport,
+}
+
 // Run dispatches args (as passed to main, including the program name at
 // index 0) to the matching subcommand and exits the process on failure.
 // With no subcommand at all, it dispatches to "run": a bare `ingot`
@@ -48,28 +73,13 @@ func Run(args []string) {
 		rest = args[2:]
 	}
 
-	var err error
-	switch sub {
-	case "run":
-		err = runRun(rest)
-	case "doctor":
-		err = runDoctor(rest)
-	case "setup":
-		err = runSetup(rest)
-	case "version":
-		fmt.Println(buildinfo.Version())
-	case "path":
-		err = runPath(rest)
-	case "export":
-		err = runExport(rest)
-	case "import":
-		err = runImport(rest)
-	default:
+	fn, ok := subcommands[sub]
+	if !ok {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
 	}
 
-	if err != nil {
+	if err := fn(rest); err != nil {
 		fmt.Fprintln(os.Stderr, "ingot:", err)
 		os.Exit(1)
 	}

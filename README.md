@@ -58,18 +58,18 @@ It checks your permissions and installs a udev rule if you're missing one. Be cl
 
 ## Keybinds
 
-Ingot reads the Shift-Shift chord directly from the keyboard, so capture needs no compositor keybind. To show or hide the panel manually, bind a key to `ingot toggle`:
+Ingot reads the Shift-Shift chord directly from the keyboard, so capture needs no compositor keybind. To show or hide the panel manually, bind a key to `ingot` with no arguments. That toggles a running instance, and starts one if there isn't one yet.
 
 Hyprland (`hyprland.conf`):
 
 ```
-bind = SUPER, grave, exec, ingot toggle
+bind = SUPER, grave, exec, ingot
 ```
 
 sway (`config`):
 
 ```
-bindsym $mod+grave exec ingot toggle
+bindsym $mod+grave exec ingot
 ```
 
 ## The panel window
