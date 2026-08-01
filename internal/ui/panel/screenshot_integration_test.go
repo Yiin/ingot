@@ -3,18 +3,22 @@
 // TestScreenshot_CapturesTheAssembledPanel is copper-l2z.38's acceptance
 // criterion: assets/screenshot.png must be a genuine capture of the real
 // running app, not a hand-built mockup. This maps the actual
-// internal/ui/panel.Shell — the same widget tree internal/app wires up
-// via internal/layershell.Panel — inside a headless compositor and
-// captures it with grim, following copper-l2z.31's
-// TestScreenshot_MapsAndCapturesANonUniformImage precedent
-// (internal/layershell/screenshot_integration_test.go) but with real
-// fixture content instead of a bare label, and reusing
+// internal/ui/panel.Shell — the same widget tree internal/app wires up —
+// inside a headless compositor and captures it with grim, following
+// copper-l2z.31's TestScreenshot_MapsAndCapturesANonUniformImage
+// precedent (internal/layershell/screenshot_integration_test.go) but with
+// real fixture content instead of a bare label, and reusing
 // panel_integration_test.go's newFixtureSections() so the two tests
 // can't drift about what "the panel's fixture content" means.
 //
+// The window here is an ordinary undecorated toplevel sized to the
+// panel's defaults, because that is what internal/app builds now. Going
+// through internal/layershell instead would capture a surface the app no
+// longer creates.
+//
 // Run via `make screenshot`, which sets INGOT_SCREENSHOT_OUT and drives
-// scripts/headless.sh; needs a real GDK display and wlr-layer-shell
-// support, so it is skipped rather than failed outside that harness.
+// scripts/headless.sh; needs a real GDK display, so it is skipped rather
+// than failed outside that harness.
 package panel
 
 import (
@@ -28,7 +32,6 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
-	"github.com/Yiin/ingot/internal/layershell"
 	"github.com/Yiin/ingot/internal/ui/notelist"
 	"github.com/Yiin/ingot/internal/ui/theme"
 	"github.com/Yiin/ingot/internal/ui/toast"
@@ -68,9 +71,6 @@ func pumpFor(d time.Duration) {
 
 func TestScreenshot_CapturesTheAssembledPanel(t *testing.T) {
 	display := requireDisplay(t)
-	if !layershell.IsSupported() {
-		t.Skip("compositor does not support wlr-layer-shell")
-	}
 	if _, err := exec.LookPath("grim"); err != nil {
 		t.Skip("grim not installed")
 	}
@@ -100,19 +100,15 @@ func TestScreenshot_CapturesTheAssembledPanel(t *testing.T) {
 	panelToast.Show("Copied 3 items to clipboard")
 
 	win := gtk.NewWindow()
-	// internal/app puts this class on the window it maps (app.go:224), and
-	// it is what clears GTK's opaque window background. Without it here,
-	// this test maps a different window than the real app does and would
-	// capture a panel whose rounded corners are filled in by the theme —
-	// hiding exactly the window-background leak the class exists to fix.
+	// Everything internal/app does to the panel's own window, so this
+	// captures the same thing the real app maps: undecorated, sized to the
+	// design's defaults, and carrying the class that paints the window the
+	// panel's colour rather than the system theme's.
+	win.SetDecorated(false)
+	win.SetDefaultSize(theme.PanelWidth, theme.PanelHeight)
 	win.AddCSSClass(theme.PanelWindowClass)
 	win.SetChild(s.Widget())
-
-	p, err := layershell.New(win, layershell.DefaultConfig(), nil)
-	if err != nil {
-		t.Fatalf("layershell.New: %v", err)
-	}
-	p.Show()
+	win.Present()
 
 	if !pumpUntil(5*time.Second, win.Mapped) {
 		t.Fatal("window did not map within 5s")

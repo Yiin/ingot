@@ -11,22 +11,24 @@ import (
 // instantly when nothing is dirty, which is the common case.
 const flushOnHideTimeout = 2 * time.Second
 
-// show maps the panel, focused and ready to type into. Per the layer-
-// shell doc, mapping hands keyboard focus to the surface automatically —
-// no explicit focus-grab dance is needed beyond focusing the composer
-// widget itself.
+// show maps the panel, focused and ready to type into. Present rather
+// than SetVisible(true): the panel is an ordinary toplevel now, so a
+// toggle fired while it is already up behind another window should raise
+// and focus it, which only Present does. The .unfocused styling follows
+// the window's own is-active property (see startup), so show does not set
+// it here.
 func (a *App) show() {
-	if a.lsPanel == nil {
+	if a.win == nil {
 		return
 	}
-	a.lsPanel.Show()
+	a.win.Present()
 	a.visible = true
-	a.shell.SetFocused(true)
 	a.shell.Composer().Focus()
 }
 
-// hide unmaps the panel. Per the layer-shell doc, focus returns to
-// whatever toplevel was previously focused automatically. The flush
+// hide unmaps the panel. The compositor hands focus back to whatever
+// toplevel was previously focused. The size is captured first, while the
+// window is still mapped and can report one. The flush
 // runs synchronously, on the GTK thread hide() is always called from —
 // never on a separate goroutine: Store.Flush's own doc says it "must be
 // called only from the goroutine that constructed" the Store, since a
@@ -35,10 +37,11 @@ func (a *App) show() {
 // usually instant anyway (flushLocked short-circuits when nothing is
 // dirty); flushOnHideTimeout only backstops a stuck disk.
 func (a *App) hide() {
-	if a.lsPanel == nil {
+	if a.win == nil {
 		return
 	}
-	a.lsPanel.Hide()
+	a.savePanelSize()
+	a.win.SetVisible(false)
 	a.visible = false
 	a.shell.SetFocused(false)
 

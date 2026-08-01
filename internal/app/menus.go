@@ -7,9 +7,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
-	"github.com/Yiin/ingot/internal/config"
 	"github.com/Yiin/ingot/internal/store"
-	"github.com/Yiin/ingot/internal/store/fsx"
 	"github.com/Yiin/ingot/internal/ui/keymap"
 	"github.com/Yiin/ingot/internal/ui/menus"
 )
@@ -285,16 +283,16 @@ func (a *App) SetProject(id string) {
 }
 
 // SetKeepOnTop persists the overflow menu's Keep on Top preference.
-// Ingot's layer-shell panel already runs at the topmost overlay layer
-// unconditionally (see internal/layershell), so there is no further
-// compositor-level effect to apply here yet — this keeps the menu's own
-// checkmark state real and durable across a restart without fabricating
-// a behaviour the panel doesn't have.
+//
+// Nothing applies it yet. Wayland has no client-side "keep above" — the
+// old gtk_window_set_keep_above was X11-only and GTK4 dropped it — so
+// staying on top is a compositor decision, reachable only through a
+// window rule against the "lt.yiin.ingot" app id. This keeps the menu's
+// own checkmark real and durable across a restart without fabricating a
+// behaviour the panel does not have. See copper-4tn.
 func (a *App) SetKeepOnTop(on bool) {
-	a.keepOnTop = on
-	if err := config.SavePanelState(fsx.OS(), a.layout, config.PanelState{KeepOnTop: on}); err != nil {
-		slog.Warn("app: save panel state", "err", err)
-	}
+	a.panelState.KeepOnTop = on
+	a.savePanelState()
 }
 
 func (a *App) ClearDone() {
@@ -363,6 +361,6 @@ func (a *App) Projects() []menus.Project {
 	return out
 }
 
-func (a *App) KeepOnTop() bool { return a.keepOnTop }
+func (a *App) KeepOnTop() bool { return a.panelState.KeepOnTop }
 
 var _ menus.Handlers = (*App)(nil)

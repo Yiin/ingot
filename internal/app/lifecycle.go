@@ -20,8 +20,13 @@ const shutdownFlushTimeout = 2 * time.Second
 // any caller that arrived some other way.
 func (a *App) shutdown() {
 	a.shutdownOnce.Do(func() {
-		// First: its goroutine posts onto the GTK thread, and Quit below
-		// stops the main loop that would run those posts.
+		// Before anything unmaps: a process killed while the panel is up
+		// never passes through hide(), and this is the last moment the
+		// window can still report the size the user left it at.
+		a.savePanelSize()
+		// First of the teardown proper: its goroutine posts onto the GTK
+		// thread, and Quit below stops the main loop that would run those
+		// posts.
 		if a.schemeStop != nil {
 			a.schemeStop()
 		}

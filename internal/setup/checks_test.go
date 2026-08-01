@@ -33,18 +33,21 @@ func TestLayerShellCheck(t *testing.T) {
 		t.Errorf("Run() with layer-shell present: Severity = %v, want OK", r.Severity)
 	}
 
+	// Warn rather than Fatal: nothing Ingot cannot do without is missing.
+	// The panel is an ordinary toplevel, and the capture toast falls back
+	// to a desktop notification when its layer-shell HUD is unavailable.
 	absent := layerShellCheck{probe: func(context.Context) (wl.Capabilities, error) {
 		return wl.Capabilities{}, nil
 	}}
-	if r := absent.Run(context.Background()); r.Severity != Fatal {
-		t.Errorf("Run() with layer-shell absent: Severity = %v, want Fatal", r.Severity)
+	if r := absent.Run(context.Background()); r.Severity != Warn {
+		t.Errorf("Run() with layer-shell absent: Severity = %v, want Warn", r.Severity)
 	}
 
 	failing := layerShellCheck{probe: func(context.Context) (wl.Capabilities, error) {
 		return wl.Capabilities{}, errors.New("no socket")
 	}}
-	if r := failing.Run(context.Background()); r.Severity != Fatal {
-		t.Errorf("Run() on probe error: Severity = %v, want Fatal", r.Severity)
+	if r := failing.Run(context.Background()); r.Severity != Warn {
+		t.Errorf("Run() on probe error: Severity = %v, want Warn", r.Severity)
 	}
 }
 

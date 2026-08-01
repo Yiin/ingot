@@ -16,11 +16,8 @@ const (
 	PanelWidth      = 360
 	PanelHeight     = 640
 	PanelMarginEdge = 12
-	PanelRadius     = 32
 	PanelBg         = "#E5E6E9"
-	PanelRim        = "rgba(255,255,255,.40)"
 	ContentInset    = 15
-	PanelShadow     = "0 8px 28px rgba(0,0,0,.20), 0 2px 8px rgba(0,0,0,.08)"
 	PanelPadTop     = 16
 	PanelPadBottom  = 15
 )
@@ -146,12 +143,13 @@ const (
 
 // Unfocused panel state (internal/ui/panel): never shown in the demo, so
 // this is Ingot's own contract, not a measurement. Only the focus-ring
-// family (*:focus-visible, .note-card.selected/.selection-anchor,
-// .composer.focused) dims to 45% opacity, and the panel shadow halves —
-// every other colour (fills, text, done state) stays exactly as-is.
+// family (*:focus:focus-visible, .note-card.selected/.selection-anchor,
+// .composer.focused) dims to 45% opacity — every other colour (fills,
+// text, done state) stays exactly as-is. The panel's own drop shadow used
+// to halve here too, until the panel became an ordinary toplevel and the
+// compositor took over drawing its frame.
 const (
-	FocusRingDim         = "rgba(10,108,255,.45)"
-	PanelShadowUnfocused = "0 4px 14px rgba(0,0,0,.10), 0 1px 4px rgba(0,0,0,.04)"
+	FocusRingDim = "rgba(10,108,255,.45)"
 )
 
 // Duplicate-capture flash (internal/ui/panel + internal/ui/notelist):
@@ -261,16 +259,6 @@ const (
 const (
 	DarkPanelBg = "#1B1C1F"
 
-	// DarkPanelRim carries more alpha than PanelRim's light .40 does work,
-	// because in dark it is the only thing drawing the panel's edge. The
-	// light panel is separated from the desktop by a drop shadow that
-	// reads against a bright wallpaper; against a dark or black desktop
-	// that same shadow is invisible (the panel is 1.23:1 against true
-	// black), so the rim is the edge.
-	DarkPanelRim             = "rgba(255,255,255,.12)"
-	DarkPanelShadow          = "0 8px 28px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.35)"
-	DarkPanelShadowUnfocused = "0 4px 14px rgba(0,0,0,.35), 0 1px 4px rgba(0,0,0,.18)"
-
 	DarkCardBg         = "#282725"
 	DarkCardBgHover    = "#333230"
 	DarkCardBgSelected = "#1E3555"
@@ -345,10 +333,7 @@ const (
 // directly through Colors(), because they paint outside GTK's CSS engine
 // and so have no var() to resolve.
 type Palette struct {
-	PanelBg              string
-	PanelRim             string
-	PanelShadow          string
-	PanelShadowUnfocused string
+	PanelBg string
 
 	CardBg         string
 	CardBgHover    string
@@ -396,10 +381,7 @@ type Palette struct {
 // pinned by TestNewLightTokensMatchSpec instead, because they are not
 // part of the measured demo spec that test guards.
 var Light = Palette{
-	PanelBg:              PanelBg,
-	PanelRim:             PanelRim,
-	PanelShadow:          PanelShadow,
-	PanelShadowUnfocused: PanelShadowUnfocused,
+	PanelBg: PanelBg,
 
 	CardBg:         CardBg,
 	CardBgHover:    CardBgHover,
@@ -436,10 +418,7 @@ var Light = Palette{
 
 // Dark is the dark palette described above the Dark* constants.
 var Dark = Palette{
-	PanelBg:              DarkPanelBg,
-	PanelRim:             DarkPanelRim,
-	PanelShadow:          DarkPanelShadow,
-	PanelShadowUnfocused: DarkPanelShadowUnfocused,
+	PanelBg: DarkPanelBg,
 
 	CardBg:         DarkCardBg,
 	CardBgHover:    DarkCardBgHover,
@@ -481,10 +460,7 @@ var Dark = Palette{
 // from this map, so a typo here would silently stop overriding one token.
 func (p Palette) tokens() map[string]string {
 	return map[string]string{
-		"--panel-bg":               p.PanelBg,
-		"--panel-rim":              p.PanelRim,
-		"--panel-shadow":           p.PanelShadow,
-		"--panel-shadow-unfocused": p.PanelShadowUnfocused,
+		"--panel-bg": p.PanelBg,
 
 		"--card-bg":          p.CardBg,
 		"--card-bg-hover":    p.CardBgHover,

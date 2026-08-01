@@ -25,9 +25,6 @@ func TestDarkTokensMatchSpec(t *testing.T) {
 		want any
 	}{
 		{"DarkPanelBg", theme.DarkPanelBg, "#1B1C1F"},
-		{"DarkPanelRim", theme.DarkPanelRim, "rgba(255,255,255,.12)"},
-		{"DarkPanelShadow", theme.DarkPanelShadow, "0 8px 28px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.35)"},
-		{"DarkPanelShadowUnfocused", theme.DarkPanelShadowUnfocused, "0 4px 14px rgba(0,0,0,.35), 0 1px 4px rgba(0,0,0,.18)"},
 
 		{"DarkCardBg", theme.DarkCardBg, "#282725"},
 		{"DarkCardBgHover", theme.DarkCardBgHover, "#333230"},

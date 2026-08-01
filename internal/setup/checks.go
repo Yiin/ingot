@@ -47,12 +47,16 @@ func (layerShellCheck) Name() string { return "layer-shell" }
 func (c layerShellCheck) Run(ctx context.Context) Result {
 	caps, err := c.probe(ctx)
 	if err != nil {
-		return Result{Severity: Fatal, Reason: "could not probe the compositor: " + err.Error()}
+		return Result{Severity: Warn, Reason: "could not probe the compositor: " + err.Error()}
 	}
 	if !caps.WlrLayerShell.Present() {
 		return Result{
-			Severity: Fatal,
-			Reason:   "compositor does not advertise zwlr_layer_shell_v1; the panel cannot dock to a screen edge",
+			// Warn, not Fatal: the panel is an ordinary toplevel and needs
+			// nothing from layer-shell. Only the capture toast's floating
+			// HUD does, and internal/ui/toast already falls back to
+			// org.freedesktop.Notifications without it.
+			Severity: Warn,
+			Reason:   "compositor does not advertise zwlr_layer_shell_v1; the capture toast falls back to a desktop notification",
 			Fix:      "use a compositor that supports wlr-layer-shell (Hyprland, sway, and most other wlroots compositors do)",
 		}
 	}

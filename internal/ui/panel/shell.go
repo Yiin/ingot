@@ -12,7 +12,7 @@ import (
 )
 
 // Shell is the assembled panel: search bar, note list and composer
-// stacked inside the opaque rounded card, plus the empty/edge-state
+// stacked inside the opaque panel surface, plus the empty/edge-state
 // overlays this child spec adds on top of them — see the package doc.
 //
 // An implicit unnamed section (a project with no declared sections) is
@@ -150,8 +150,8 @@ func toastBottomInset(composerContentHeight int) int {
 	return composerContentHeight + 2*theme.CardPadY + theme.PanelPadBottom + theme.PanelToastGap
 }
 
-// Widget returns the panel's root widget, ready for internal/layershell
-// (copper-l2z.19) to place inside the layer-shell surface's window.
+// Widget returns the panel's root widget, ready for internal/app to set
+// as its toplevel window's child. It fills that window edge to edge.
 func (s *Shell) Widget() gtk.Widgetter { return s.outer }
 
 // SearchBar returns the panel's search bar, for a later child
@@ -177,10 +177,15 @@ func (s *Shell) OnFilterChanged(f func()) { s.onFilterChanged = f }
 func (s *Shell) Composer() *composer.Composer { return s.composer }
 
 // SetFocused toggles the panel's focused/unfocused visual state: while
-// unfocused, the focus-ring family (the *:focus-visible outline,
+// unfocused, the focus-ring family (the *:focus:focus-visible outline,
 // .note-card.selected/.selection-anchor, .composer.focused) dims to 45%
-// opacity and the panel shadow halves, via the .unfocused CSS class —
-// every other colour (fills, text, done state) is untouched.
+// opacity, via the .unfocused CSS class — every other colour (fills,
+// text, done state) is untouched.
+//
+// internal/app drives this from the window's own is-active property. As a
+// layer surface the panel was focused for its whole visible life, so the
+// state could only ever be set by hand; an ordinary toplevel really does
+// go inactive when the user clicks another window.
 func (s *Shell) SetFocused(focused bool) {
 	if focused {
 		s.root.RemoveCSSClass("unfocused")

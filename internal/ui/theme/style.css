@@ -24,11 +24,8 @@
   --panel-w: 360;
   --panel-h: 640;
   --panel-margin-edge: 12;
-  --panel-radius: 32;
   --panel-bg: #E5E6E9;
-  --panel-rim: rgba(255,255,255,.40);
   --content-inset: 15;
-  --panel-shadow: 0 8px 28px rgba(0,0,0,.20), 0 2px 8px rgba(0,0,0,.08);
   --panel-pad-top: 16;
   --panel-pad-bottom: 15;
 
@@ -99,7 +96,6 @@
    * of its own, so every ring in this file depends on that re-resolution. */
   --focus-ring-color: var(--accent);
   --focus-ring-dim: rgba(10,108,255,.45);
-  --panel-shadow-unfocused: 0 4px 14px rgba(0,0,0,.10), 0 1px 4px rgba(0,0,0,.04);
   --panel-hint-pad: 40;
 
   /* Colours that used to be literals inside a rule (or inside a cairo
@@ -117,26 +113,31 @@
   --font-family: "Inter Variable", "Adwaita Sans", "Cantarell", sans-serif;
 }
 
-/* The layer-shell window must paint nothing at all. GTK gives every
- * GtkWindow an opaque background from the theme, and the surface is
- * exactly the panel's size, so that square shows through at the four
- * corners .ingot-panel rounds off — the panel reads as a rectangle with
- * dark corners rather than a rounded card. Clearing it here lets the
- * compositor's alpha through, which is what makes the rounding real.
- * Both selectors are needed: GTK adds .background to the window itself,
- * and its style takes precedence over a bare `window` rule. */
+/* The panel's window paints the panel's own colour rather than the system
+ * theme's window background. .ingot-panel covers the whole window, so in
+ * a settled frame this is never visible — but a resize reallocates the
+ * child a frame behind the surface, and without this the gap flashes
+ * Adwaita's grey. Both selectors are needed: GTK adds .background to the
+ * window itself, and its style beats a bare `window` rule. */
 window.ingot-panel-window,
 window.ingot-panel-window.background {
-  background-color: transparent;
+  background-color: var(--panel-bg);
   background-image: none;
   box-shadow: none;
 }
 
-/* The panel: opaque, no backdrop-filter — see the header comment above. */
+/* The panel: opaque, square, filling its window edge to edge — see the
+ * header comment above for the no-backdrop-filter note.
+ *
+ * It carries no corner radius and no drop shadow of its own. The panel is
+ * an ordinary toplevel now (internal/app's startup), so the compositor
+ * owns its frame: it draws whatever border, rounding and shadow the
+ * user's desktop is configured for, and a second set painted inside the
+ * surface would sit under the first rather than replace it. Rounding here
+ * would also cut transparent notches out of an opaque window, showing the
+ * desktop through the four corners inside a square compositor border. */
 .ingot-panel {
   background-color: var(--panel-bg);
-  border-radius: calc(var(--panel-radius) * 1px);
-  box-shadow: var(--panel-shadow), inset 0 1px 0 var(--panel-rim);
   padding: calc(var(--panel-pad-top) * 1px) calc(var(--content-inset) * 1px)
     calc(var(--panel-pad-bottom) * 1px) calc(var(--content-inset) * 1px);
   font-family: var(--font-family);
@@ -146,12 +147,13 @@ window.ingot-panel-window.background {
 }
 
 /* Unfocused (another app has focus): only the focus-ring family dims to
- * 45% and the panel shadow halves, via --focus-ring-color cascading into
- * every ring below — never dim card fills, text or done state. Not shown
- * in the demo; internal/ui/panel's own contract. */
+ * 45%, via --focus-ring-color cascading into every ring below — never dim
+ * card fills, text or done state. Not shown in the demo; internal/ui/
+ * panel's own contract. The panel shadow used to halve here too; it has
+ * no shadow of its own to halve now that the compositor draws the frame,
+ * and the compositor already marks an unfocused window in its own way. */
 .ingot-panel.unfocused {
   --focus-ring-color: var(--focus-ring-dim);
-  box-shadow: var(--panel-shadow-unfocused), inset 0 1px 0 var(--panel-rim);
 }
 
 /* Note card: warm surface, no drop shadow (measured fact — see header).
@@ -706,10 +708,9 @@ checkbutton check:checked {
 }
 
 /* The editor's toplevel GtkWindow (internal/ui/editorwindow/window.go:67).
- * Unlike the panel window this one must paint — it is an ordinary
- * decorated toplevel — but it has to paint the card colour, not the
- * system theme's window background, which on a dark desktop framed the
- * light editor body in near-black. Both selectors for the same reason
+ * It has to paint the card colour, not the system theme's window
+ * background, which on a dark desktop framed the light editor body in
+ * near-black. Both selectors for the same reason
  * window.ingot-panel-window needs both: GTK adds .background itself. */
 window.ingot-editor-window,
 window.ingot-editor-window.background {
@@ -755,8 +756,9 @@ window.ingot-editor-window windowcontrols button:active > image {
 
 /* The dark HUD's layer-shell GtkWindow (internal/ui/toast/hud.go:58).
  * Its surface is a plain rectangle behind a 17dp-radius toast, so GTK's
- * .background fill showed as a grey square at the corners — the same leak
- * window.ingot-panel-window fixes for the panel. */
+ * .background fill showed as a grey square at the corners. The HUD is
+ * still a layer surface, unlike the panel, so clearing it to transparent
+ * really does let the compositor's alpha through. */
 window.ingot-toast-window,
 window.ingot-toast-window.background {
   background-color: transparent;

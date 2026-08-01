@@ -72,6 +72,28 @@ sway (`config`):
 bindsym $mod+grave exec ingot toggle
 ```
 
+## The panel window
+
+The panel is an ordinary window. Move it, resize it, fullscreen it, or send it to another workspace with the same keys you use for everything else. Ingot remembers the size you leave it at, in `~/.local/state/ingot/panel.json`. Fullscreen and maximised sizes aren't remembered, so a temporary fullscreen doesn't become the new default.
+
+It's undecorated, because your compositor already draws the frame.
+
+Wayland gives an app no say in where its own window opens, so that part is up to your compositor. Most tiling setups will want to float it. Match on the app id `lt.yiin.ingot`:
+
+Hyprland (`hyprland.conf`):
+
+```
+windowrule = float on, match:class ^lt\.yiin\.ingot$
+```
+
+sway (`config`):
+
+```
+for_window [app_id="lt.yiin.ingot"] floating enable
+```
+
+Add `size` or `move` rules there too if you want it in a fixed spot. A `size` rule overrides the remembered size on every open, which is worth knowing if you'd rather resize it by hand.
+
 ## Where your notes live
 
 Each project is one Markdown file under `$XDG_DATA_HOME/ingot/projects` (usually `~/.local/share/ingot/projects`). Sections are `##` headings, tasks are `- [ ]` and `- [x]`, and anything else plain is a note. Continuation lines are indented two spaces, which keeps the file readable and means editing it by hand never confuses Ingot.
@@ -96,7 +118,7 @@ Open it in any editor. Put it in git if you want history. Ingot doesn't need to 
 
 ## Why no Flatpak
 
-Hyprland, sway, and niri all block the two protocols Ingot depends on (layer-shell for the panel, data-control for the clipboard) for apps running inside a Flatpak security context. There's no sandboxed build until that changes upstream.
+Hyprland, sway, and niri all block the two protocols Ingot depends on (data-control for the clipboard, layer-shell for the capture toast) for apps running inside a Flatpak security context. There's no sandboxed build until that changes upstream.
 
 ## License
 

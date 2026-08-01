@@ -15,7 +15,6 @@ import (
 	"github.com/Yiin/ingot/internal/config"
 	"github.com/Yiin/ingot/internal/hotkey"
 	"github.com/Yiin/ingot/internal/input"
-	"github.com/Yiin/ingot/internal/layershell"
 	"github.com/Yiin/ingot/internal/selection"
 	"github.com/Yiin/ingot/internal/session"
 	"github.com/Yiin/ingot/internal/store"
@@ -54,7 +53,6 @@ type App struct {
 
 	shell   *panel.Shell
 	win     *gtk.ApplicationWindow
-	lsPanel *layershell.Panel
 	toaster *toast.Toaster
 
 	detector *hotkey.Detector
@@ -72,7 +70,11 @@ type App struct {
 	// syncingNavToList guards onListSelectionChanged against reacting to
 	// its own syncNavToList's SelectItems call — see nav.go.
 	syncingNavToList bool
-	keepOnTop        bool
+	// panelState is panel.json in memory, the single writer for it. Held
+	// whole rather than field by field because SetKeepOnTop and
+	// savePanelSize both persist it, and either writing only its own field
+	// would blank the other's.
+	panelState config.PanelState
 	// started guards the activate handler: GApplication fires activate once
 	// during Run, and startup has already decided whether the panel begins
 	// visible, so only a later activate (a re-launch) should present it.
@@ -112,11 +114,11 @@ func Run(opts Options) int {
 	panelState := config.LoadPanelState(fsx.OS(), layout)
 
 	a := &App{
-		layout:    layout,
-		cfg:       cfg,
-		hidden:    opts.Hidden,
-		detector:  hotkey.NewDetector(cfg.Hotkey.Window),
-		keepOnTop: panelState.KeepOnTop,
+		layout:     layout,
+		cfg:        cfg,
+		hidden:     opts.Hidden,
+		detector:   hotkey.NewDetector(cfg.Hotkey.Window),
+		panelState: panelState,
 	}
 
 	// Build the real App first and probe the bus through it. Registering a
@@ -214,21 +216,35 @@ func (a *App) startup() error {
 	a.adapter.Seed()
 	a.unsub = a.store.Subscribe(safeEvent("store-event", a.adapter.OnEvent))
 
+	// An ordinary toplevel, not a layer-shell surface: the panel is meant
+	// to be moved, resized and fullscreened like any other window, and an
+	// overlay layer surface can do none of those. It also held the
+	// keyboard for as long as it was mapped, so clicking another window
+	// never really handed focus back.
+	//
+	// Undecorated, because the compositor already frames it. GTK's own
+	// alternative is a CSD headerbar, which costs vertical space and looks
+	// unlike anything else on a wlroots desktop. Wayland gives a client no
+	// say in its own placement, so where the panel opens is up to the
+	// compositor — float it with a window rule against the "lt.yiin.ingot"
+	// app id (README, "The panel window").
 	win := gtk.NewApplicationWindow(a.gapp.Application)
 	win.SetChild(a.shell.Widget())
+	win.SetTitle("Ingot")
 	win.SetDecorated(false)
-	// GTK paints every window an opaque theme colour. Under layer-shell
-	// the surface is exactly the panel's size, so that rectangle shows
-	// through at the four corners .ingot-panel rounds off. This class is
-	// what theme's stylesheet hangs a transparent background on.
+	win.SetDefaultSize(a.panelSize())
+	// Paints the window the panel's colour, so a resize cannot flash the
+	// system theme's grey through before the child catches up.
 	win.AddCSSClass(theme.PanelWindowClass)
 	a.win = win
 
-	lsPanel, err := layershell.New(&win.Window, layershell.DefaultConfig(), nil)
-	if err != nil {
-		return fmt.Errorf("layer-shell surface (compositor may lack wlr-layer-shell; run `ingot doctor`): %w", err)
-	}
-	a.lsPanel = lsPanel
+	// The panel is now genuinely unfocused whenever another window is
+	// active, so the dimmed focus-ring state tracks the real thing instead
+	// of being driven by show/hide. As a layer surface it was focused for
+	// its whole visible life and this distinction could not arise.
+	win.NotifyProperty("is-active", func() {
+		a.shell.SetFocused(win.IsActive())
+	})
 
 	a.wireCompose()
 	a.wireCopyShortcuts()
@@ -270,3 +286,49 @@ func (a *App) startup() error {
 
 // notifier returns the app's Notifier.
 func (a *App) notifier() toast.Notifier { return a.toaster }
+
+// panelSize returns the size the panel window should open at: whatever
+// the user last left it, falling back to the design's own 360x640.
+func (a *App) panelSize() (width, height int) {
+	width, height = a.panelState.Width, a.panelState.Height
+	if width <= 0 {
+		width = theme.PanelWidth
+	}
+	if height <= 0 {
+		height = theme.PanelHeight
+	}
+	return width, height
+}
+
+// savePanelSize records the panel window's current size so the next
+// launch opens at it.
+//
+// Maximised and fullscreen sizes are deliberately not recorded. Those are
+// a temporary mode rather than a chosen size, and persisting one would
+// leave the panel opening full-screen forever after a single Super+F,
+// with no affordance to get the old size back.
+func (a *App) savePanelSize() {
+	if a.win == nil || !a.win.Mapped() {
+		return
+	}
+	if a.win.IsMaximized() || a.win.IsFullscreen() {
+		return
+	}
+	w, h := a.win.Width(), a.win.Height()
+	if w <= 0 || h <= 0 {
+		return
+	}
+	if w == a.panelState.Width && h == a.panelState.Height {
+		return
+	}
+	a.panelState.Width, a.panelState.Height = w, h
+	a.savePanelState()
+}
+
+// savePanelState writes panel.json. A failure here costs a preference,
+// never data, so it warns rather than propagating.
+func (a *App) savePanelState() {
+	if err := config.SavePanelState(fsx.OS(), a.layout, a.panelState); err != nil {
+		slog.Warn("app: save panel state", "err", err)
+	}
+}

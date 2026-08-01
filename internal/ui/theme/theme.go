@@ -7,12 +7,13 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 )
 
-// PanelWindowClass is the CSS class the panel's GtkWindow must carry for
-// the stylesheet to clear its background. GTK paints every window an
-// opaque theme colour, and under layer-shell the surface is exactly the
-// panel's size, so that square shows at the four corners .ingot-panel
-// rounds off. The name lives here, beside the rule that consumes it, so
-// the window and the stylesheet cannot drift apart.
+// PanelWindowClass is the CSS class the panel's GtkWindow must carry so
+// the stylesheet can paint it the panel's own colour instead of the
+// system theme's window background. .ingot-panel covers the window in a
+// settled frame, but a resize reallocates the child a frame behind the
+// surface and the gap would otherwise flash Adwaita's grey. The name
+// lives here, beside the rule that consumes it, so the window and the
+// stylesheet cannot drift apart.
 const PanelWindowClass = "ingot-panel-window"
 
 // EditorWindowClass is the CSS class the note editor's GtkWindow must

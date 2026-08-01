@@ -16,14 +16,19 @@ import (
 // race the other's read-modify-write cycle. A UI preference has no
 // business in the store's own note-and-project domain state anyway.
 //
-// Ingot's layer-shell panel has no user-facing resize or move affordance
-// today (fixed width, right-edge anchored, height capped by theme
-// constants — see internal/layershell), so there is no literal size or
-// position to persist yet; KeepOnTop is the one piece of panel-level UI
-// state that already exists (menus.Handlers.SetKeepOnTop) and needs
-// somewhere to survive a restart.
+// Width and Height are the panel window's last non-maximised size in dp.
+// Position is deliberately absent: Wayland gives a client no way to place
+// its own toplevel, so where the panel lands is the compositor's call and
+// storing a position here would be a number nothing could ever apply.
+//
+// Zero means "never set" for both, and internal/app falls back to
+// theme.PanelWidth by theme.PanelHeight — which is why both carry
+// omitempty, so a panel.json written before the panel became a resizable
+// toplevel still loads cleanly.
 type PanelState struct {
 	KeepOnTop bool `json:"keepOnTop,omitempty"`
+	Width     int  `json:"width,omitempty"`
+	Height    int  `json:"height,omitempty"`
 }
 
 // LoadPanelState reads panel.json, or returns the zero PanelState if the

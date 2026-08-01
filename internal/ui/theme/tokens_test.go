@@ -19,11 +19,8 @@ func TestTokensMatchSpec(t *testing.T) {
 		{"PanelWidth", theme.PanelWidth, 360},
 		{"PanelHeight", theme.PanelHeight, 640},
 		{"PanelMarginEdge", theme.PanelMarginEdge, 12},
-		{"PanelRadius", theme.PanelRadius, 32},
 		{"PanelBg", theme.PanelBg, "#E5E6E9"},
-		{"PanelRim", theme.PanelRim, "rgba(255,255,255,.40)"},
 		{"ContentInset", theme.ContentInset, 15},
-		{"PanelShadow", theme.PanelShadow, "0 8px 28px rgba(0,0,0,.20), 0 2px 8px rgba(0,0,0,.08)"},
 		{"PanelPadTop", theme.PanelPadTop, 16},
 		{"PanelPadBottom", theme.PanelPadBottom, 15},
 
