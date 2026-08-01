@@ -303,15 +303,25 @@ func (a *App) panelSize() (width, height int) {
 // savePanelSize records the panel window's current size so the next
 // launch opens at it.
 //
-// Maximised and fullscreen sizes are deliberately not recorded. Those are
-// a temporary mode rather than a chosen size, and persisting one would
-// leave the panel opening full-screen forever after a single Super+F,
-// with no affordance to get the old size back.
+// Fullscreen is deliberately not recorded: it is a temporary mode rather
+// than a chosen size, and persisting it would leave the panel opening
+// full-screen forever after a single Super+F, with no affordance to get
+// the old size back.
+//
+// Maximised deliberately IS recorded, even though it reads like the same
+// case. GtkWindow.IsMaximized reports the xdg_toplevel maximized state,
+// which wlroots compositors set on any window they size themselves — on
+// Hyprland it was true for a plain floating 640x900 window that the user
+// had never maximised (measured: mapped=true max=true fs=false w=640
+// h=900). Excluding it therefore did not exclude "the user maximised
+// this", it disabled size persistence outright on the compositors Ingot
+// targets. A genuinely maximised window reopening at that size is the
+// mild and defensible failure here.
 func (a *App) savePanelSize() {
 	if a.win == nil || !a.win.Mapped() {
 		return
 	}
-	if a.win.IsMaximized() || a.win.IsFullscreen() {
+	if a.win.IsFullscreen() {
 		return
 	}
 	w, h := a.win.Width(), a.win.Height()
