@@ -6,6 +6,7 @@ import (
 	"github.com/diamondburned/gotk4/pkg/cairo"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 
 	"github.com/Yiin/ingot/internal/ui/theme"
 )
@@ -117,6 +118,11 @@ func NewRow() *Row {
 
 	strike := gtk.NewDrawingArea()
 	strike.SetCanTarget(false)
+	// drawStrike reads the label's own line layout, so the rule has to be
+	// repainted when new text re-wraps the label into different lines —
+	// a same-height rewrap allocates no new size and would otherwise
+	// leave the old lines' rules on screen.
+	label.NotifyProperty("label", func() { strike.QueueDraw() })
 
 	overlay := gtk.NewOverlay()
 	overlay.SetChild(label.Label)
@@ -308,24 +314,111 @@ func (r *Row) strikeProgress() float64 {
 	return clamp01(float64(r.strikeElapsed) / float64(strikeDuration))
 }
 
-// drawStrike paints the done strikethrough as a left-to-right wipe. It
-// approximates the x-height mid-line as half the first line's height
-// (theme.LineBody/2): getting the real Pango x-height needs a
-// font-metrics query this overlay has no other reason to make.
+// strikeSegment is one wrapped line's strike: where the line's text
+// starts and ends, and the y to draw the rule at, all in the overlay's
+// widget coordinates.
+type strikeSegment struct {
+	x, y, width float64
+}
+
+// drawStrike paints the done strikethrough as a left-to-right wipe over
+// every wrapped line of the label, each line struck only across its own
+// text. It approximates the x-height mid-line as half a line's height:
+// getting the real Pango x-height needs a font-metrics query this
+// overlay has no other reason to make.
 func (r *Row) drawStrike(_ *gtk.DrawingArea, cr *cairo.Context, width, height int) {
 	reveal := r.strikeProgress()
 	if reveal <= 0 {
 		return
 	}
-	y := float64(theme.LineBody) / 2
+	segments := r.strikeSegments(width)
+	if len(segments) == 0 {
+		return
+	}
 	// Read at draw time so a colour-scheme change repaints in the new
 	// palette — see theme.Colors.
 	ir, ig, ib := theme.ParseRGB(theme.Colors().InkDone)
-
-	cr.NewPath()
-	cr.MoveTo(0, y)
-	cr.LineTo(float64(width)*reveal, y)
 	cr.SetLineWidth(1)
 	cr.SetSourceRGB(ir, ig, ib)
-	cr.Stroke()
+
+	for i, drawn := range revealWidths(segmentWidths(segments), reveal) {
+		if drawn <= 0 {
+			continue
+		}
+		cr.NewPath()
+		cr.MoveTo(segments[i].x, segments[i].y)
+		cr.LineTo(segments[i].x+drawn, segments[i].y)
+		cr.Stroke()
+	}
+}
+
+// strikeSegments reads one segment per wrapped line out of the label's
+// Pango layout. It falls back to a single full-width segment on the
+// first line if the layout has no lines to report — the same rule the
+// row drew before it struck every line.
+func (r *Row) strikeSegments(width int) []strikeSegment {
+	fallback := []strikeSegment{{x: 0, y: float64(theme.LineBody) / 2, width: float64(width)}}
+	if r.Label == nil {
+		return fallback
+	}
+	layout := r.Label.Layout()
+	if layout == nil {
+		return fallback
+	}
+	// The layout does not start at the widget's origin: the label's own
+	// padding and its start alignment both offset it.
+	offX, offY := r.Label.LayoutOffsets()
+
+	var segments []strikeSegment
+	iter := layout.Iter()
+	for {
+		_, logical := iter.LineExtents()
+		w := float64(logical.Width()) / pango.SCALE
+		if w > 0 {
+			segments = append(segments, strikeSegment{
+				x:     float64(offX) + float64(logical.X())/pango.SCALE,
+				y:     float64(offY) + (float64(logical.Y())+float64(logical.Height())/2)/pango.SCALE,
+				width: w,
+			})
+		}
+		if !iter.NextLine() {
+			break
+		}
+	}
+	if len(segments) == 0 {
+		return fallback
+	}
+	return segments
+}
+
+func segmentWidths(segments []strikeSegment) []float64 {
+	widths := make([]float64, len(segments))
+	for i, s := range segments {
+		widths[i] = s.width
+	}
+	return widths
+}
+
+// revealWidths splits a single left-to-right wipe across consecutive
+// lines: the wipe spends reveal of the total text width, filling each
+// line before it starts the next, so the rule reads as one stroke that
+// wraps rather than as one stroke per line drawn at once.
+func revealWidths(widths []float64, reveal float64) []float64 {
+	total := 0.0
+	for _, w := range widths {
+		total += w
+	}
+	drawn := make([]float64, len(widths))
+	if total <= 0 {
+		return drawn
+	}
+	remaining := clamp01(reveal) * total
+	for i, w := range widths {
+		if remaining <= 0 {
+			break
+		}
+		drawn[i] = min(w, remaining)
+		remaining -= drawn[i]
+	}
+	return drawn
 }

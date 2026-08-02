@@ -43,6 +43,32 @@ func TestRowStateCSSClasses(t *testing.T) {
 	}
 }
 
+func TestRevealWidths(t *testing.T) {
+	cases := []struct {
+		name   string
+		widths []float64
+		reveal float64
+		want   []float64
+	}{
+		{"nothing revealed yet", []float64{100, 60}, 0, []float64{0, 0}},
+		{"first line still filling", []float64{100, 60}, 0.25, []float64{40, 0}},
+		{"first line exactly full", []float64{100, 60}, 0.625, []float64{100, 0}},
+		{"wipe carries onto the second line", []float64{100, 60}, 0.75, []float64{100, 20}},
+		{"every line struck", []float64{100, 60}, 1, []float64{100, 60}},
+		{"three lines, halfway", []float64{40, 40, 40}, 0.5, []float64{40, 20, 0}},
+		{"reveal beyond 1 is clamped", []float64{100, 60}, 1.5, []float64{100, 60}},
+		{"no text to strike", []float64{}, 1, []float64{}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := revealWidths(c.widths, c.reveal)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("revealWidths(%v, %v) = %v, want %v", c.widths, c.reveal, got, c.want)
+			}
+		})
+	}
+}
+
 func TestStrikeProgress(t *testing.T) {
 	r := &Row{}
 	if got := r.strikeProgress(); got != 0 {
