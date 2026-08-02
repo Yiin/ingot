@@ -204,16 +204,38 @@ func (a *App) Copy()       { a.copySelection(false, false) }
 func (a *App) CopyAsList() { a.copySelection(true, false) }
 func (a *App) MarkDone()   { a.markDoneSelected() }
 
-// focusedNoteID is the note every single-note command acts on: the one
-// keymap.Nav has focus on, which the context menu keeps aligned with the
-// right-clicked row (see wireNav's SyncFocus wiring). Empty when the list
-// has no focused row — every caller treats that as "nothing to do", since
-// there is no sensible fallback to a note the user did not point at.
+// focusedNoteID is the note every single-note command acts on.
+//
+// keymap.Nav is the authority, but it only learns about focus moves its
+// own key controller drove. GTK moves focus into the list by itself for
+// Tab and for GtkListView's built-in arrow handling, and neither goes
+// through Nav — so after tabbing to a row, Nav's focus is still empty and
+// every command keyed off it does nothing at all. That was measured, not
+// theorised: Tab, Tab, Tab, Space reached the gate with the row focused
+// ("GtkListItemWidget [activatable]") while Nav still reported no focused
+// row, so Space marked nothing done.
+//
+// So fall back to whichever row GTK actually focused, and hand it to
+// Nav.SyncFocus on the way past. Adopting it matters as much as returning
+// it: without that, a subsequent Up or Down would resume from wherever
+// Nav's own focus last was rather than from the row the user is looking
+// at.
+//
+// Empty only when nothing in the list holds focus, which every caller
+// treats as "nothing to do" — there is no sensible fallback to a note the
+// user never pointed at.
 func (a *App) focusedNoteID() string {
 	if a.nav == nil {
 		return ""
 	}
-	return a.nav.FocusedID()
+	if id := a.nav.FocusedID(); id != "" {
+		return id
+	}
+	id := a.shell.List().FocusedID()
+	if id != "" {
+		a.nav.SyncFocus(id)
+	}
+	return id
 }
 
 // Expand flips the focused row between its 3-line cap and its full body.

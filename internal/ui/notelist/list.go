@@ -474,6 +474,42 @@ func (l *List) CancelInlineEdit() {
 // a multi-select before falling through to any later step.
 func (l *List) ClearSelection() { l.sel.UnselectAll() }
 
+// FocusedID returns the id of the note whose row currently holds
+// keyboard focus, or "" if no bound row does.
+//
+// This answers a question keymap.Nav cannot: GTK moves focus into the
+// list on its own for Tab and for its built-in arrow handling, without
+// going through Nav's key controller, so Nav's idea of the focused row
+// stays empty and every command keyed off it silently does nothing. The
+// caller pairs this with Nav.SyncFocus to adopt whatever GTK actually
+// focused — see app.focusedNoteID.
+//
+// The test is ancestry, not identity or parentage. GtkListView wraps
+// every child in its own GtkListItemWidget and that wrapper is what takes
+// focus (measured: the focused widget reports as "GtkListItemWidget
+// [activatable]", never as the row's own box), and this package puts a
+// GtkRevealer of its own in between for the insert animation — so the
+// focused widget is the row's grandparent, not its parent.
+func (l *List) FocusedID() string {
+	root := gtk.BaseWidget(l.listView).Root()
+	if root == nil {
+		return ""
+	}
+	focus := root.Focus()
+	if focus == nil {
+		return ""
+	}
+	for _, b := range l.rows {
+		if b.item == nil {
+			continue
+		}
+		if gtk.BaseWidget(b.row).IsAncestor(focus) {
+			return b.item.ID
+		}
+	}
+	return ""
+}
+
 // boundRow returns the rowBinding currently displaying it, or nil if it
 // has no live (on-screen) row — the same off-screen-is-a-no-op contract
 // as FlashDuplicate below.

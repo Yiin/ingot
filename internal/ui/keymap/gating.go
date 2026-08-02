@@ -19,19 +19,32 @@ func ShouldGateForList(textFocused bool) bool {
 	return !textFocused
 }
 
-// IsTextFocused reports whether w's root currently has a *gtk.Text
-// focused — the check InstallListGate's PROPAGATION_CAPTURE key
-// controller runs before gating Space or BackSpace to a list action.
-// GtkEntry and GtkSearchEntry both delegate their own key handling to
-// an internal GtkText, which is what Root.Focus returns while either is
-// focused, so this covers the composer and the search field alike.
+// IsTextFocused reports whether w's root currently has a text-editing
+// widget focused — the check InstallListGate's PROPAGATION_CAPTURE key
+// controller runs before treating a key as a list action.
+//
+// Both GTK text widgets count, and both are load-bearing:
+//
+//   - *gtk.Text is what GtkEntry and GtkSearchEntry delegate key handling
+//     to, and what Root.Focus returns while either is focused. That covers
+//     the search field.
+//   - *gtk.TextView covers the composer, and — the case that actually
+//     bites — the inline row editor, which is a composer.Composer living
+//     inside a note row. A row is a descendant of the GtkListView, so the
+//     gate's capture-phase controller sees its keys first. Missing this
+//     meant Return was resolved as edit-inline and swallowed while the
+//     user was typing into the very editor it had just opened, so an
+//     inline edit could be started and never committed.
 func IsTextFocused(w gtk.Widgetter) bool {
 	root := gtk.BaseWidget(w).Root()
 	if root == nil {
 		return false
 	}
-	_, ok := root.Focus().(*gtk.Text)
-	return ok
+	switch root.Focus().(type) {
+	case *gtk.Text, *gtk.TextView:
+		return true
+	}
+	return false
 }
 
 // InstallListGate attaches a PROPAGATION_CAPTURE key controller to

@@ -61,11 +61,34 @@ func (a *App) wireListToggle() {
 	})
 }
 
-// markDoneSelected toggles every selected note's own done state — not a
+// targetNotes is what a list command acts on: the selection, or the
+// single focused row when nothing is selected.
+//
+// The fallback is what makes the keyboard work at all from a cold start.
+// Reaching the list with Tab focuses a row without selecting it, and
+// GtkListView's own arrow handling can move that focus without selecting
+// either, so a selection-only rule left Space and Delete doing nothing on
+// the row the user was plainly pointing at. focusedNoteID has the
+// measurement.
+func (a *App) targetNotes() []*notelist.Item {
+	if selected := a.shell.List().Selected(); len(selected) > 0 {
+		return selected
+	}
+	id := a.focusedNoteID()
+	if id == "" {
+		return nil
+	}
+	if it := a.adapter.itemForNote(store.NoteID(id)); it != nil {
+		return []*notelist.Item{it}
+	}
+	return nil
+}
+
+// markDoneSelected toggles every targeted note's own done state — not a
 // single "set all done", so a mixed selection acts the same way
 // clicking each row's own checkbox individually would.
 func (a *App) markDoneSelected() {
-	for _, it := range a.shell.List().Selected() {
+	for _, it := range a.targetNotes() {
 		if err := a.store.SetNoteDone(store.NoteID(it.ID), !it.Done); err != nil {
 			slog.Warn("app: mark done", "id", it.ID, "err", err)
 		}
@@ -76,7 +99,7 @@ func (a *App) markDoneSelected() {
 // emits one NotesSpliced removal per contiguous run rather than one per
 // note.
 func (a *App) deleteSelected() {
-	selected := a.shell.List().Selected()
+	selected := a.targetNotes()
 	if len(selected) == 0 {
 		return
 	}
