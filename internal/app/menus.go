@@ -8,9 +8,21 @@ import (
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	"github.com/Yiin/ingot/internal/store"
+	"github.com/Yiin/ingot/internal/ui/editorwindow"
 	"github.com/Yiin/ingot/internal/ui/keymap"
 	"github.com/Yiin/ingot/internal/ui/menus"
 )
+
+// accelsRevokedForListGate are the gio action names whose menus.Accels
+// binding wireMenus takes back, because keymap.InstallListGate carries
+// the same key correctly instead — see the block in wireMenus for why
+// each one is dangerous as an app-wide accelerator.
+//
+// It is a package var, not three inline calls, because
+// TestEveryListShortcutIsWired has to know that menus.Accels listing an
+// accelerator does not mean the app installs it. Without that the test
+// silently passed for an unimplemented action.
+var accelsRevokedForListGate = []string{"mark-done", "edit", "edit-new-window"}
 
 // wireMenus registers menus' actions on the application, attaches the
 // note context menu to the list and the overflow menu to the search
@@ -20,24 +32,30 @@ import (
 func (a *App) wireMenus() {
 	a.menuActions = menus.Register(a.gapp.Application, a)
 
-	// menus.Accels maps "mark-done" to bare "space" and "edit" to bare
-	// "Return", and Register installs both as real gtk.Application
-	// accelerators. A bare-key app-wide accelerator fires even while the
-	// composer or search field is focused, eating the character the user
-	// meant to type — precisely the failure mode keymap's own
-	// ShouldGateForList policy exists to avoid, and why Space is already
-	// routed through keymap.InstallListGate instead (see wireListGate).
-	// Clearing the accelerator here leaves the action, and its menu
-	// item, fully reachable by click; only the dangerous global
-	// keybinding is removed. "edit" carries no real risk today (Edit is
-	// a stub, see the Handlers methods below) but is cleared for the
-	// same reason, so a future inline-edit feature does not inherit a
-	// silent bug. applyMenuKeyOverrides (below) runs after this and may
-	// re-enable either with the user's own, by-construction-validated
-	// combo — that's an informed choice the user made, not the same risk
-	// as an unconditional default.
-	a.gapp.SetAccelsForAction("app.mark-done", nil)
-	a.gapp.SetAccelsForAction("app.edit", nil)
+	// menus.Accels maps "mark-done" to bare "space", "edit" to bare
+	// "Return" and "edit-new-window" to "<Control>Return", and Register
+	// installs all three as real gtk.Application accelerators. An app-wide
+	// accelerator fires whatever has focus, so each of these would reach
+	// past the composer and the search field and take a key the user meant
+	// for the text they are typing — precisely the failure mode keymap's
+	// own ShouldGateForList policy exists to avoid. All three are routed
+	// through keymap.InstallListGate instead (see wireListGate), which
+	// acts only while no text widget is focused.
+	//
+	// Ctrl+Return is in that list despite carrying a modifier: it is the
+	// composer's own commit binding (composer.installCommitKeys), so
+	// leaving it app-wide would open an editor window instead of saving
+	// the note being written.
+	//
+	// Clearing the accelerator leaves the action, and its menu item, fully
+	// reachable by click; only the global keybinding goes.
+	// applyMenuKeyOverrides (below) runs after this and may re-enable any
+	// of them with the user's own, by-construction-validated combo —
+	// that's an informed choice the user made, not the same risk as an
+	// unconditional default.
+	for _, action := range accelsRevokedForListGate {
+		a.gapp.SetAccelsForAction("app."+action, nil)
+	}
 	a.applyMenuKeyOverrides()
 
 	a.wireExtraShortcuts()
@@ -182,12 +200,89 @@ func (a *App) rebuildNewSectionEntry(popover *gtk.PopoverMenu) {
 
 // The following methods implement menus.Handlers.
 
-func (a *App) Copy()          { a.copySelection(false, false) }
-func (a *App) CopyAsList()    { a.copySelection(true, false) }
-func (a *App) MarkDone()      { a.markDoneSelected() }
-func (a *App) Expand()        {} // no note editor or row-expand feature yet — see the child spec's stub allowance
-func (a *App) Edit()          {} // ditto: copper-l2z.27's inline editor doesn't exist yet
-func (a *App) EditNewWindow() {} // ditto
+func (a *App) Copy()       { a.copySelection(false, false) }
+func (a *App) CopyAsList() { a.copySelection(true, false) }
+func (a *App) MarkDone()   { a.markDoneSelected() }
+
+// focusedNoteID is the note every single-note command acts on: the one
+// keymap.Nav has focus on, which the context menu keeps aligned with the
+// right-clicked row (see wireNav's SyncFocus wiring). Empty when the list
+// has no focused row — every caller treats that as "nothing to do", since
+// there is no sensible fallback to a note the user did not point at.
+func (a *App) focusedNoteID() string {
+	if a.nav == nil {
+		return ""
+	}
+	return a.nav.FocusedID()
+}
+
+// Expand flips the focused row between its 3-line cap and its full body.
+// One command rather than two because that is the shape menus.Handlers
+// exposes: the menu item reads RowIsExpanded to label itself Expand or
+// Collapse, so the same action has to serve both. The keyboard does get
+// the one-way pair — Right expands, Left collapses — through
+// setFocusedExpanded (see wireListGate).
+func (a *App) Expand() {
+	if id := a.focusedNoteID(); id != "" {
+		a.shell.List().ToggleExpanded(id)
+	}
+}
+
+// setFocusedExpanded forces the focused row into a given expansion state,
+// backing the Right and Left keys. Unlike Expand it is idempotent, which
+// is what those keys should be: holding Right must not flap the row.
+func (a *App) setFocusedExpanded(expanded bool) {
+	if id := a.focusedNoteID(); id != "" {
+		a.shell.List().SetExpanded(id, expanded)
+	}
+}
+
+// Edit starts an inline edit on the focused row — the row's label is
+// swapped for a composer seeded with the note's raw Markdown. Committing
+// runs through the list's ConnectEditCommitted hook, wired in
+// wireNoteEditing, so this only has to start it.
+func (a *App) Edit() {
+	if id := a.focusedNoteID(); id != "" {
+		a.shell.List().StartInlineEdit(id)
+	}
+}
+
+// EditNewWindow opens the focused note in its own editor window. The
+// manager dedups by note id, so repeating this on an already-open note
+// presents that window rather than stacking a second one.
+func (a *App) EditNewWindow() {
+	id := a.focusedNoteID()
+	if id == "" {
+		return
+	}
+	note, err := a.store.Note(store.NoteID(id))
+	if err != nil {
+		slog.Warn("app: edit in new window", "id", id, "err", err)
+		return
+	}
+	a.editors.Open(editorwindow.Note{
+		ID:    id,
+		Title: editorTitle(note.Body),
+		Body:  note.Body,
+	})
+}
+
+// editorTitle names an editor window after its note's first line, so a
+// user with several open can tell them apart from the window list alone.
+// Notes have no title field — the body is the whole note — so this is a
+// display-only derivation, never persisted.
+func editorTitle(body string) string {
+	line, _, _ := strings.Cut(body, "\n")
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "Untitled note"
+	}
+	const maxRunes = 60
+	if r := []rune(line); len(r) > maxRunes {
+		return strings.TrimSpace(string(r[:maxRunes])) + "…"
+	}
+	return line
+}
 
 // Merge combines the current selection into one note, in document
 // order, at the position of the first. A no-op with fewer than two
@@ -316,9 +411,12 @@ func (a *App) RowIsDone(idx int) bool {
 	return it != nil && it.Done
 }
 
-// RowIsExpanded always reports false: there is no expand/collapse
-// feature behind it yet (see Expand's own stub note above).
-func (a *App) RowIsExpanded(idx int) bool { return false }
+// RowIsExpanded reports whether the row at idx has already had its
+// 3-line cap dropped, which is what decides whether the context menu
+// offers Expand or Collapse. False for an off-screen row: expansion is
+// row-widget state, not item state, so there is nothing to report until
+// the row is bound — see notelist.List.IsExpandedAt.
+func (a *App) RowIsExpanded(idx int) bool { return a.shell.List().IsExpandedAt(idx) }
 
 func (a *App) SelectionCount() int { return len(a.shell.List().Selected()) }
 

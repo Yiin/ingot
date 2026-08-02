@@ -8,17 +8,43 @@ import (
 	"github.com/Yiin/ingot/internal/ui/notelist"
 )
 
-// wireListGate wires Space (mark done/undone) and BackSpace (delete) on
-// the note list via keymap.InstallListGate rather than a
-// gtk.Application accelerator: both are bare keys with no modifier, and
-// an app-wide accelerator would fire even while the composer or search
-// field is focused, eating the character the user meant to type.
-// InstallListGate exists specifically to gate this correctly on
-// IsTextFocused — see its own doc comment. Wrapped in safe(): this is a
-// raw GTK key-controller callback gtkapp does not wrap in its own
-// recover.
+// wireListGate wires every keymap.Table ScopeList action that operates
+// on the focused or selected note, through keymap.InstallListGate rather
+// than gtk.Application accelerators.
+//
+// The gate is what makes bare keys safe. Space, Return, Left and Right
+// all mean something entirely different while the composer or the search
+// field has focus, and an app-wide accelerator fires regardless of focus
+// — so binding them that way would eat the character the user meant to
+// type. InstallListGate resolves against Table and only acts while no
+// text widget is focused; see its own doc comment.
+//
+// Ctrl+Return is here for the same reason even though it carries a
+// modifier: the composer commits on Ctrl+Enter (composer.installCommitKeys),
+// so an app-wide binding would open an editor window instead of saving
+// the note being typed. wireMenus clears the accelerator menus.Accels
+// installs for it, exactly as it already does for edit and mark-done.
+//
+// Every handler is wrapped in safe(): these are raw GTK key-controller
+// callbacks, which gtkapp does not wrap in its own recover.
 func (a *App) wireListGate() {
-	keymap.InstallListGate(a.shell.List().ListView(), safe("mark-done-selected", a.markDoneSelected), safe("delete-selected", a.deleteSelected))
+	keymap.InstallListGate(a.shell.List().ListView(), a.listActionHandlers())
+}
+
+// listActionHandlers is wireListGate's map, split out so
+// TestEveryListShortcutIsWired can read which keymap.Table actions this
+// package actually implements without needing a display. Building the map
+// touches no App field, so the test can call it on a bare &App{}.
+func (a *App) listActionHandlers() map[string]func() {
+	return map[string]func(){
+		"mark-done":       safe("mark-done-selected", a.markDoneSelected),
+		"delete-note":     safe("delete-selected", a.deleteSelected),
+		"edit-inline":     safe("edit-inline", a.Edit),
+		"edit-new-window": safe("edit-new-window", a.EditNewWindow),
+		"expand":          safe("expand", func() { a.setFocusedExpanded(true) }),
+		"collapse":        safe("collapse", func() { a.setFocusedExpanded(false) }),
+		"toggle-expand":   safe("toggle-expand", a.Expand),
+	}
 }
 
 // wireListToggle persists a row checkbox click — the click already

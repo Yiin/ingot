@@ -35,28 +35,43 @@ func IsTextFocused(w gtk.Widgetter) bool {
 }
 
 // InstallListGate attaches a PROPAGATION_CAPTURE key controller to
-// widget (the notelist's ListView) that calls onMarkDone for Space and
-// onDelete for BackSpace, but only while ShouldGateForList(IsTextFocused
-// (widget)) is true. Otherwise it reports the key unhandled, so GTK's
-// normal bubble-phase delivery proceeds to whatever text widget the
-// user is actually typing into — capture phase runs first, but
+// widget (the notelist's ListView) that runs handlers[action] for every
+// ScopeList accelerator in Table, but only while
+// ShouldGateForList(IsTextFocused(widget)) is true. A key that resolves
+// to no Table entry, or to an action with no handler, is reported
+// unhandled, so GTK's normal bubble-phase delivery proceeds to whatever
+// widget the user is actually aiming at — capture phase runs first, but
 // returning false here does not stop that later delivery.
-func InstallListGate(widget gtk.Widgetter, onMarkDone, onDelete func()) {
+//
+// This is where every bare-key list action has to live. An app-wide
+// gtk.Application accelerator fires no matter what has focus, so binding
+// Space or Return that way eats the character the user meant to type
+// into the composer or the search field — which is why wireMenus clears
+// those accelerators rather than relying on them.
+//
+// Resolving against Table rather than switching on keyvals is what keeps
+// the shortcuts window honest: Table is what that window lists, so an
+// entry gains its real behaviour by appearing in handlers under the same
+// action name, and TestEveryListActionHasAHandler fails when one does
+// not. Ctrl+Shift+Up/Down are the exception it permits, and its own
+// comment says why.
+func InstallListGate(widget gtk.Widgetter, handlers map[string]func()) {
 	ctrl := gtk.NewEventControllerKey()
 	ctrl.SetPropagationPhase(gtk.PhaseCapture)
-	ctrl.ConnectKeyPressed(func(keyval, _ uint, _ gdk.ModifierType) bool {
+	ctrl.ConnectKeyPressed(func(keyval, _ uint, state gdk.ModifierType) bool {
 		if !ShouldGateForList(IsTextFocused(widget)) {
 			return false
 		}
-		switch keyval {
-		case gdk.KEY_space:
-			onMarkDone()
-			return true
-		case gdk.KEY_BackSpace:
-			onDelete()
-			return true
+		e, ok := Resolve(ScopeList, keyval, state)
+		if !ok {
+			return false
 		}
-		return false
+		fn, ok := handlers[e.Action]
+		if !ok {
+			return false
+		}
+		fn()
+		return true
 	})
 	gtk.BaseWidget(widget).AddController(ctrl)
 }

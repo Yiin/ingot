@@ -349,6 +349,24 @@ func (l *List) IsTruncatedAt(pos int) bool {
 	return false
 }
 
+// IsExpandedAt reports whether the note at display position pos has had
+// its 3-line cap dropped, per widget.Row.IsExpanded. False for a
+// position with no currently bound (on-screen) row: expansion lives on
+// the row widget, not the item, so an off-screen note has no state to
+// report — the same contract IsTruncatedAt keeps, and for the same
+// reason. This is what decides whether the context menu offers Expand or
+// Collapse.
+func (l *List) IsExpandedAt(pos int) bool {
+	it := l.ItemAtViewPosition(pos)
+	if it == nil {
+		return false
+	}
+	if b := l.boundRow(it); b != nil {
+		return b.row.IsExpanded()
+	}
+	return false
+}
+
 // SetAnchor marks it as the keyboard-focus anchor within a
 // multi-selection (widget.Row's .selection-anchor ring), repainting
 // every live row.

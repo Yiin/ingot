@@ -21,6 +21,7 @@ import (
 	"github.com/Yiin/ingot/internal/store/fsstore"
 	"github.com/Yiin/ingot/internal/store/fsx"
 	"github.com/Yiin/ingot/internal/store/paths"
+	"github.com/Yiin/ingot/internal/ui/editorwindow"
 	"github.com/Yiin/ingot/internal/ui/gtkapp"
 	"github.com/Yiin/ingot/internal/ui/keymap"
 	"github.com/Yiin/ingot/internal/ui/menus"
@@ -54,6 +55,8 @@ type App struct {
 	shell   *panel.Shell
 	win     *gtk.ApplicationWindow
 	toaster *toast.Toaster
+	// editors owns every open standalone note-editor window; see edit.go.
+	editors *editorwindow.Manager
 
 	detector *hotkey.Detector
 	reader   selection.Reader
@@ -247,6 +250,7 @@ func (a *App) startup() error {
 	})
 
 	a.wireCompose()
+	a.wireNoteEditing()
 	a.wireCopyShortcuts()
 	a.wireListGate()
 	a.wireListToggle()
